@@ -1,0 +1,85 @@
+# AnomChatBot Configuration
+
+# Bot behavior settings
+bot:
+  name: "AnomChatBot"
+  version: "1.0.0"
+  default_language: "fi"
+  response_delay_min: 1
+  response_delay_max: 3
+
+# Conversation settings
+conversation:
+  auto_archive_days: 30
+  max_history_messages: 100
+  enable_context_memory: true
+  
+  # Tone settings (0.0 - 1.0)
+  tone_levels:
+    professional: 0.0
+    friendly: 0.5
+    casual: 0.8
+    playful: 1.0
+  
+  # Flirt level settings (0.0 - 1.0)
+  flirt_levels:
+    none: 0.0
+    subtle: 0.3
+    moderate: 0.6
+    high: 0.9
+
+# System prompts
+prompts:
+  base: "Olet avulias ja ystävällinen keskustelukumppani. Vastaat aina suomeksi."
+  
+  tone_modifiers:
+    professional: "Käytä ammattimaista ja asiallista kieltä."
+    friendly: "Ole ystävällinen ja lämmin sävyltäsi."
+    casual: "Ole rento ja epämuodollinen."
+    playful: "Ole leikkisä ja humoristinen."
+  
+  flirt_modifiers:
+    none: ""
+    subtle: "Voit käyttää kevyttä flirttiä ja kohteliaisuuksia."
+    moderate: "Voit flirtailla kohtuullisesti ja olla hieman seurusteleva."
+    high: "Voit olla selvästi flirttaileva ja romanttinen."
+
+# Media processing
+media:
+  enable_image_analysis: true
+  enable_video_analysis: true
+  enable_audio_transcription: true
+  
+  image:
+    max_width: 1920
+    max_height: 1080
+    compression_quality: 85
+  
+  video:
+    extract_frames: true
+    frames_per_minute: 2
+  
+  audio:
+    language: "fi-FI"
+    enable_translation: false
+
+# Admin commands
+admin:
+  commands:
+    - start
+    - stop
+    - restart
+    - status
+    - list
+    - configure
+    - history
+    - analytics
+  
+  status_check_interval: 30
+  
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  max_file_size: 10485760  # 10MB
+  backup_count: 5
