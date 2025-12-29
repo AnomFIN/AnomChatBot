@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 from typing import Optional, Dict, List
 from datetime import datetime
+from collections import deque
 from loguru import logger
 
 try:
@@ -59,7 +60,8 @@ class WhatsAppBot:
         self.client: Optional[WhatsAPIDriver] = None
         self.session_path = config.whatsapp_session_path
         self.listener_thread = None
-        self.last_message_ids = set()
+        # Use deque for automatic size limiting of processed message IDs
+        self.last_message_ids = deque(maxlen=1000)
         
         # Media directories
         self.media_base_path = Path("./data/media")
@@ -270,10 +272,6 @@ class WhatsAppBot:
                             
                             # Process the message
                             await self._process_message(chat, message)
-                    
-                    # Clean up old message IDs (keep last 1000)
-                    if len(self.last_message_ids) > 1000:
-                        self.last_message_ids = set(list(self.last_message_ids)[-1000:])
                 
                 except Exception as e:
                     logger.error(f"Error fetching messages: {e}")
@@ -544,9 +542,12 @@ class WhatsAppBot:
                 extension = ".mp4"
             elif media_type == "document":
                 save_dir = self.document_path
-                extension = getattr(message, 'filename', 'file').split('.')[-1]
-                if not extension.startswith('.'):
-                    extension = '.' + extension
+                # Safely get extension from filename
+                filename = getattr(message, 'filename', 'file.bin')
+                if '.' in filename:
+                    extension = '.' + filename.split('.')[-1]
+                else:
+                    extension = '.bin'  # Default extension if none found
             else:
                 logger.warning(f"Unknown media type: {media_type}")
                 return None
@@ -560,9 +561,20 @@ class WhatsAppBot:
             
             # Download the media
             try:
-                message.save_media(str(save_path))
-                logger.info(f"Media downloaded successfully: {save_path}")
-                return str(save_path)
+                # Note: webwhatsapi's save_media sometimes only downloads thumbnails
+                # This is a known limitation of the library
+                message.save_media(str(save_path), force_download=True)
+                
+                # Verify the file was created
+                if os.path.exists(save_path):
+                    logger.info(f"Media downloaded successfully: {save_path}")
+                    return str(save_path)
+                else:
+                    logger.error(f"Media file was not created: {save_path}")
+                    return None
+            except AttributeError:
+                logger.error("Message object doesn't have save_media method")
+                return None
             except Exception as e:
                 logger.error(f"Failed to download media: {e}")
                 return None
