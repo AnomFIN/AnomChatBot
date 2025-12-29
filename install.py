@@ -108,6 +108,21 @@ class Installer:
         self.print_success("pip3 is available")
         return True
     
+    def check_chrome_chromium(self) -> bool:
+        """Check if Chrome/Chromium is available (for WhatsApp Web)"""
+        self.print_info("Checking for Chrome/Chromium...")
+        
+        browsers = ['chromium', 'chromium-browser', 'google-chrome', 'chrome']
+        for browser in browsers:
+            returncode, _, _ = self.run_command(f"which {browser}")
+            if returncode == 0:
+                self.print_success(f"Found: {browser}")
+                return True
+        
+        self.print_warning("Chrome/Chromium not found. WhatsApp Web may not work.")
+        self.print_info("Install with: sudo apt install chromium-browser")
+        return True  # Not fatal, return True to continue
+    
     def install_dependencies(self) -> bool:
         """Install Python dependencies"""
         self.print_info("Installing Python dependencies...")
@@ -135,7 +150,10 @@ class Installer:
         
         directories = [
             "data/conversations",
-            "data/media",
+            "data/media/image",
+            "data/media/audio",
+            "data/media/video",
+            "data/media/document",
             "data/logs",
             "data/whatsapp_session"
         ]
@@ -310,6 +328,7 @@ WantedBy=multi-user.target
             ("System Check", self.check_system),
             ("Python Version", self.check_python_version),
             ("Pip Check", self.check_pip),
+            ("Browser Check", self.check_chrome_chromium),
             ("Dependencies", self.install_dependencies),
             ("Directories", self.create_directories),
             ("Environment", self.setup_environment),
