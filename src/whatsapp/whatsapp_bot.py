@@ -88,7 +88,7 @@ class WhatsAppBot:
             
             # Set up Chrome options for headless mode
             chrome_options = ChromeOptions()
-            chrome_options.add_argument("--headless=new")  # Use new headless mode
+            chrome_options.add_argument("--headless")  # Headless mode for background operation
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
@@ -262,8 +262,8 @@ class WhatsAppBot:
                             if message_id in self.last_message_ids:
                                 continue
                             
-                            # Add to processed set
-                            self.last_message_ids.add(message_id)
+                            # Add to processed deque
+                            self.last_message_ids.append(message_id)
                             
                             # Only process messages from individual chats (not groups)
                             if chat.chat_id.endswith("@g.us"):
