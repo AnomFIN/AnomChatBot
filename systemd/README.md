@@ -2,6 +2,23 @@
 
 For production deployments, you can run AnomChatBot as a systemd service for automatic startup and management.
 
+## Prerequisites
+
+Before installing the service, ensure the required directories exist:
+
+```bash
+# Create logs directory
+mkdir -p /home/anomchatbot/AnomChatBot/logs
+chmod 700 /home/anomchatbot/AnomChatBot/logs
+
+# The .wwebjs_auth directory will be created automatically on first run
+# but you can pre-create it with secure permissions:
+mkdir -p /home/anomchatbot/AnomChatBot/.wwebjs_auth
+chmod 700 /home/anomchatbot/AnomChatBot/.wwebjs_auth
+```
+
+**Important:** These directories must exist and be writable by the service user before starting the service.
+
 ## Installation
 
 1. **Copy service file**
@@ -18,6 +35,7 @@ Update these lines to match your setup:
 - `User=anomchatbot` → Your username
 - `WorkingDirectory=/home/anomchatbot/AnomChatBot` → Your path
 - `ExecStart=/usr/bin/node index.js` → Verify node path with `which node`
+- `ReadWritePaths=...` → Update paths to match your installation directory
 
 3. **Reload systemd**
 ```bash

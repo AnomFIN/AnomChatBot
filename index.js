@@ -6,6 +6,8 @@
  */
 
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 import WhatsAppBridge from './src/bridges/WhatsAppBridge.js';
 import TelegramController from './src/bridges/TelegramController.js';
 import AIEngine from './src/managers/AIEngine.js';
@@ -54,12 +56,32 @@ class AnomChatBot {
   }
 
   /**
+   * Ensure required directories exist
+   */
+  ensureDirectories() {
+    const directories = [
+      path.join(process.cwd(), 'logs'),
+      path.join(process.cwd(), '.wwebjs_auth')
+    ];
+    
+    directories.forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        logger.info(`Created directory: ${dir}`);
+      }
+    });
+  }
+
+  /**
    * Start the chatbot system
    */
   async start() {
     logger.info('🚀 Starting AnomChatBot...');
     
     try {
+      // Ensure required directories exist
+      this.ensureDirectories();
+      
       // Initialize AI Engine
       logger.info('Connecting to OpenAI...');
       await this.aiEngine.initialize();
