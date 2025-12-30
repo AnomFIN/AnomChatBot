@@ -39,11 +39,7 @@ class AIEngine {
     }
 
     try {
-      const {
-        flirtLevel = 0.5,
-        tone = 'friendly',
-        aiAggressiveness = 0.5
-      } = settings;
+      const { aiAggressiveness = 0.5 } = settings;
 
       // Adjust temperature based on settings
       const temperature = 0.7 + (aiAggressiveness * 0.3);

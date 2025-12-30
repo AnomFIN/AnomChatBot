@@ -114,7 +114,7 @@ sudo chown -R your-user:your-user /path/to/AnomChatBot
 # Set permissions
 chmod 600 .env
 chmod 755 logs/
-chmod 755 .wwebjs_auth/
+chmod 700 .wwebjs_auth/
 ```
 
 ### Service crashes immediately

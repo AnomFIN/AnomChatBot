@@ -15,6 +15,7 @@ class TelegramController {
     // Store for awaiting responses
     this.pendingResponses = new Map();
     this.conversationMapping = new Map(); // Telegram chatId -> WhatsApp chatId
+    this.maxMappingSize = 1000; // Limit to prevent memory leak
   }
 
   /**
@@ -101,7 +102,7 @@ class TelegramController {
       const systemPrompt = match[1];
       const replyTo = msg.reply_to_message;
       
-      if (!replyTo || !replyTo.forward_from_chat) {
+      if (!replyTo) {
         await this.bot.sendMessage(msg.chat.id, 
           '⚠️ Reply to a WhatsApp message to enable AI'
         );
@@ -112,7 +113,7 @@ class TelegramController {
       
       if (!whatsappChatId) {
         await this.bot.sendMessage(msg.chat.id, 
-          '⚠️ Could not identify WhatsApp chat'
+          '⚠️ Could not identify WhatsApp chat. Make sure you reply to a forwarded WhatsApp message.'
         );
         return;
       }
@@ -186,6 +187,13 @@ class TelegramController {
       
       // Store mapping for replies
       this.conversationMapping.set(sent.message_id, whatsappChatId);
+      
+      // Cleanup old mappings if size exceeds limit (FIFO)
+      if (this.conversationMapping.size > this.maxMappingSize) {
+        const firstKey = this.conversationMapping.keys().next().value;
+        this.conversationMapping.delete(firstKey);
+        logger.debug('Cleaned up old conversation mapping');
+      }
       
       logger.info(`Message forwarded to Telegram from: ${whatsappChatId}`);
       return true;
