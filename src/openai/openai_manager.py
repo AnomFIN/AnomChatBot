@@ -1,7 +1,6 @@
 """
 OpenAI integration for AnomChatBot
 """
-import asyncio
 import base64
 from typing import List, Dict, Optional, Tuple
 from openai import AsyncOpenAI
