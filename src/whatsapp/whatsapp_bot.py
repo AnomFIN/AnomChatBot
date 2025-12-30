@@ -159,7 +159,7 @@ class WhatsAppBot:
             )
             
             # Check if we have a pending first message
-            pending_first = self.conversation_manager.get_pending_first_message(chat_id)
+            pending_first = await self.conversation_manager.get_pending_first_message(chat_id)
             if pending_first:
                 # Store the user's incoming message first
                 await self.db.add_message(
@@ -175,7 +175,7 @@ class WhatsAppBot:
                 
                 # Mark first message as sent
                 await self.db.mark_first_message_sent(chat_id)
-                self.conversation_manager.clear_pending_first_message(chat_id)
+                await self.conversation_manager.clear_pending_first_message(chat_id)
                 
                 logger.info(f"Sent first message to {chat_id}")
                 return

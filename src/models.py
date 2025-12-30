@@ -21,6 +21,7 @@ class Conversation(Base):
     # Conversation settings
     is_active = Column(Boolean, default=True)
     first_message_sent = Column(Boolean, default=False)
+    pending_first_message = Column(Text)  # Persisted pending first message
     system_prompt = Column(Text)
     tone_level = Column(Float, default=0.5)  # 0.0 - 1.0
     flirt_level = Column(Float, default=0.0)  # 0.0 - 1.0

@@ -72,6 +72,7 @@ class DatabaseManager:
         tone_level: Optional[float] = None,
         flirt_level: Optional[float] = None,
         temperature: Optional[float] = None,
+        pending_first_message: Optional[str] = None,
         **kwargs
     ):
         """Update conversation settings"""
@@ -90,6 +91,8 @@ class DatabaseManager:
                     conversation.flirt_level = flirt_level
                 if temperature is not None:
                     conversation.temperature = temperature
+                if pending_first_message is not None:
+                    conversation.pending_first_message = pending_first_message
                 
                 # Update additional settings
                 if kwargs:

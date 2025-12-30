@@ -3,6 +3,7 @@ Configuration manager for AnomChatBot
 """
 import os
 import yaml
+import threading
 from typing import Dict, Any, Optional
 from pathlib import Path
 from dotenv import load_dotenv
@@ -201,13 +202,35 @@ class Config:
         return f"<Config(bot={self.bot_name}, version={self.bot_version})>"
 
 
-# Global configuration instance
-config = None
+# Global configuration instance with thread-safe access
+_config = None
+_config_lock = threading.Lock()
 
 
 def get_config(config_path: Optional[str] = None, env_path: Optional[str] = None) -> Config:
-    """Get or create global configuration instance"""
-    global config
-    if config is None:
-        config = Config(config_path, env_path)
-    return config
+    """
+    Get or create global configuration instance (thread-safe)
+    
+    Note: Once initialized, the configuration is immutable. For testing or
+    reconfiguration, use reset_config() first.
+    """
+    global _config
+    
+    # Double-checked locking pattern for thread safety
+    if _config is None:
+        with _config_lock:
+            if _config is None:
+                _config = Config(config_path, env_path)
+    
+    return _config
+
+
+def reset_config():
+    """
+    Reset the global configuration instance
+    
+    This is primarily for testing purposes or when configuration needs to be reloaded.
+    """
+    global _config
+    with _config_lock:
+        _config = None
