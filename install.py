@@ -82,8 +82,11 @@ class AnomChatBotInstaller:
             else:
                 result = subprocess.run(cmd_list, shell=False, check=check)
                 return result.returncode == 0, "", ""
-        except (ValueError, FileNotFoundError, TypeError) as e:
-            # Handle invalid commands, commands not found, or invalid types
+        except TypeError as e:
+            # Handle invalid command type
+            return False, "", str(e)
+        except FileNotFoundError as e:
+            # Handle command not found
             return False, "", str(e)
         except subprocess.CalledProcessError as e:
             return False, "", str(e)
