@@ -65,8 +65,10 @@ class AnomChatBotInstaller:
             if isinstance(cmd, str):
                 # Use shlex.split for proper shell-like splitting
                 cmd_list = shlex.split(cmd)
-            else:
+            elif isinstance(cmd, list):
                 cmd_list = cmd
+            else:
+                raise TypeError(f"cmd must be string or list, not {type(cmd).__name__}")
             
             if capture:
                 result = subprocess.run(
@@ -80,10 +82,10 @@ class AnomChatBotInstaller:
             else:
                 result = subprocess.run(cmd_list, shell=False, check=check)
                 return result.returncode == 0, "", ""
-        except subprocess.CalledProcessError as e:
+        except (ValueError, FileNotFoundError, TypeError) as e:
+            # Handle invalid commands, commands not found, or invalid types
             return False, "", str(e)
-        except (ValueError, FileNotFoundError) as e:
-            # Handle invalid commands or commands not found
+        except subprocess.CalledProcessError as e:
             return False, "", str(e)
     
     def check_system_requirements(self):
