@@ -65,9 +65,17 @@ class AnomChatBot {
     ];
     
     directories.forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        logger.info(`Created directory: ${dir}`);
+      try {
+        // Use recursive option to create parent directories if needed
+        fs.mkdirSync(dir, { recursive: true });
+        // Explicitly set permissions to ensure security
+        fs.chmodSync(dir, 0o700);
+        logger.info(`Ensured directory exists: ${dir}`);
+      } catch (error) {
+        if (error.code !== 'EEXIST') {
+          logger.error(`Failed to create directory ${dir}:`, error);
+          throw error;
+        }
       }
     });
   }
