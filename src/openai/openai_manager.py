@@ -15,7 +15,15 @@ class OpenAIManager:
     def __init__(self, api_key: str, model: str = "gpt-4-turbo-preview"):
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
-        self.encoding = tiktoken.encoding_for_model("gpt-4")
+        try:
+            # Use tokenizer corresponding to the configured model when possible
+            self.encoding = tiktoken.encoding_for_model(self.model)
+        except Exception as e:
+            logger.warning(
+                f"Falling back to cl100k_base tokenizer for model '{self.model}': {e}"
+            )
+            # Fallback to a generic GPT-4-class tokenizer
+            self.encoding = tiktoken.get_encoding("cl100k_base")
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""
