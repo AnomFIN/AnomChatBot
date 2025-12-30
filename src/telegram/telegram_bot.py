@@ -3,7 +3,7 @@ Telegram bot with admin panel for AnomChatBot
 """
 import asyncio
 from typing import Optional
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
