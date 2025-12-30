@@ -21,6 +21,7 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/home/anomchatbot/AnomChatBot/logs /home/anomchatbot/AnomChatBot/.wwebjs_auth
 UMask=0077
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
