@@ -299,24 +299,19 @@ class WhatsAppBot:
         Returns:
             Contact information dictionary
         """
-        try:
-            # In real implementation:
-            # contact = await self.client.get_contact(contact_id)
-            # return {
-            #     'name': contact.name,
-            #     'number': contact.number,
-            #     'profile_pic': contact.profile_pic_url
-            # }
-            
-            return {
-                'name': 'Unknown',
-                'number': contact_id,
-                'profile_pic': None
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting contact info: {e}")
-            return {}
+        # In real implementation:
+        # contact = await self.client.get_contact(contact_id)
+        # return {
+        #     'name': contact.name,
+        #     'number': contact.number,
+        #     'profile_pic': contact.profile_pic_url
+        # }
+        
+        return {
+            'name': 'Unknown',
+            'number': contact_id,
+            'profile_pic': None
+        }
     
     async def set_status(self, status: str):
         """
