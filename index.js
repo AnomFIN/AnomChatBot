@@ -66,16 +66,15 @@ class AnomChatBot {
     
     directories.forEach(dir => {
       try {
-        // Use recursive option to create parent directories if needed
-        fs.mkdirSync(dir, { recursive: true });
-        // Explicitly set permissions to ensure security
+        // Create directory with secure permissions
+        // recursive:true creates parent dirs if needed and doesn't error if exists
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        // Ensure permissions are set correctly even if dir already existed
         fs.chmodSync(dir, 0o700);
-        logger.info(`Ensured directory exists: ${dir}`);
+        logger.debug(`Ensured directory exists with secure permissions: ${dir}`);
       } catch (error) {
-        if (error.code !== 'EEXIST') {
-          logger.error(`Failed to create directory ${dir}:`, error);
-          throw error;
-        }
+        logger.error(`Failed to ensure directory ${dir}:`, error);
+        throw error;
       }
     });
   }
