@@ -1,3 +1,27 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment
+.env
+
+# WhatsApp session
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
 # Python
 __pycache__/
 *.py[cod]
