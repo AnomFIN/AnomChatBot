@@ -9,7 +9,7 @@ import subprocess
 import platform
 import shutil
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple
 
 
 class Colors:
@@ -239,7 +239,7 @@ After=network.target
 Type=simple
 User={os.getenv('USER', 'root')}
 WorkingDirectory={self.root_dir}
-ExecStart=/usr/bin/python3 {self.root_dir}/main.py
+ExecStart={sys.executable} {self.root_dir}/main.py
 Restart=always
 RestartSec=10
 

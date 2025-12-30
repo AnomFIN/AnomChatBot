@@ -1,9 +1,8 @@
 """
 Conversation manager for AnomChatBot
 """
-import asyncio
 import time
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 from datetime import datetime
 from loguru import logger
 
@@ -78,6 +77,12 @@ class ConversationManager:
             temperature: AI temperature setting
             custom_settings: Additional custom settings
         """
+        # Validate tone_level and flirt_level
+        if tone_level is not None and not 0.0 <= tone_level <= 1.0:
+            raise ValueError("tone_level must be between 0.0 and 1.0")
+        if flirt_level is not None and not 0.0 <= flirt_level <= 1.0:
+            raise ValueError("flirt_level must be between 0.0 and 1.0")
+        
         # Update conversation settings
         await self.db.update_conversation_settings(
             chat_id=chat_id,
@@ -108,6 +113,12 @@ class ConversationManager:
             tone_level: Tone level (0.0 - 1.0)
             flirt_level: Flirt level (0.0 - 1.0)
         """
+        # Validate tone_level and flirt_level
+        if not 0.0 <= tone_level <= 1.0:
+            raise ValueError("tone_level must be between 0.0 and 1.0")
+        if not 0.0 <= flirt_level <= 1.0:
+            raise ValueError("flirt_level must be between 0.0 and 1.0")
+        
         self.pending_first_messages[chat_id] = {
             'message': message,
             'system_prompt': system_prompt,

@@ -2,15 +2,13 @@
 Telegram bot with admin panel for AnomChatBot
 """
 import asyncio
-from typing import Optional, List
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from typing import Optional
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
-    MessageHandler,
     ContextTypes,
-    filters
 )
 from loguru import logger
 
@@ -141,7 +139,7 @@ class TelegramBot:
             
         except Exception as e:
             logger.error(f"Error starting bot: {e}")
-            await update.message.reply_text(f"❌ Virhe käynnistettäessä: {e}")
+            await update.message.reply_text("❌ Virhe käynnistettäessä bottia. Katso lokit lisätiedoista.")
     
     async def cmd_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /stop command"""
@@ -167,11 +165,13 @@ class TelegramBot:
                 description="Stopped bot"
             )
             
-            await update.message.reply_text("✅ Botti pysäytetty.")
+            await update.message.reply_text(
+                "✅ WhatsApp-botti pysäytetty. Telegram-hallintapaneeli on yhä käynnissä."
+            )
             
         except Exception as e:
             logger.error(f"Error stopping bot: {e}")
-            await update.message.reply_text(f"❌ Virhe pysäytettäessä: {e}")
+            await update.message.reply_text("❌ Virhe pysäytettäessä bottia. Katso lokit lisätiedoista.")
     
     async def cmd_restart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /restart command"""
@@ -207,7 +207,7 @@ class TelegramBot:
             
         except Exception as e:
             logger.error(f"Error restarting bot: {e}")
-            await update.message.reply_text(f"❌ Virhe uudelleenkäynnistettäessä: {e}")
+            await update.message.reply_text("❌ Virhe uudelleenkäynnistettäessä. Katso lokit lisätiedoista.")
     
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
@@ -243,7 +243,7 @@ class TelegramBot:
             
         except Exception as e:
             logger.error(f"Error getting status: {e}")
-            await update.message.reply_text(f"❌ Virhe haettaessa tilaa: {e}")
+            await update.message.reply_text("❌ Virhe haettaessa tilaa. Katso lokit lisätiedoista.")
     
     async def cmd_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /list command - list active conversations"""
@@ -274,7 +274,7 @@ class TelegramBot:
             
         except Exception as e:
             logger.error(f"Error listing conversations: {e}")
-            await update.message.reply_text(f"❌ Virhe: {e}")
+            await update.message.reply_text("❌ Virhe listattaessa keskusteluja. Katso lokit lisätiedoista.")
     
     async def cmd_configure(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /configure command"""
@@ -344,7 +344,7 @@ Ongelmatilanteissa tarkista /status ja /logs
             
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
-            await update.message.reply_text(f"❌ Virhe: {e}")
+            await update.message.reply_text("❌ Virhe haettaessa tilastoja. Katso lokit lisätiedoista.")
     
     async def cmd_logs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /logs command - show recent admin logs"""
@@ -373,7 +373,7 @@ Ongelmatilanteissa tarkista /status ja /logs
             
         except Exception as e:
             logger.error(f"Error getting logs: {e}")
-            await update.message.reply_text(f"❌ Virhe: {e}")
+            await update.message.reply_text("❌ Virhe haettaessa lokeja. Katso lokit lisätiedoista.")
     
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle callback queries from inline keyboards"""

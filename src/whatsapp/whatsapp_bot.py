@@ -37,6 +37,7 @@ class WhatsAppBot:
         self.is_running = False
         self.client = None
         self.session_path = config.whatsapp_session_path
+        self._listener_task = None  # Store task reference
     
     async def initialize(self):
         """Initialize WhatsApp client"""
@@ -74,8 +75,8 @@ class WhatsAppBot:
                 "Integrate with actual WhatsApp library for production use."
             )
             
-            # Start message listener (simulated)
-            asyncio.create_task(self._message_listener())
+            # Start message listener (simulated) and store task reference
+            self._listener_task = asyncio.create_task(self._message_listener())
             
         except Exception as e:
             logger.error(f"Failed to start WhatsApp bot: {e}")
@@ -85,6 +86,14 @@ class WhatsAppBot:
         """Stop WhatsApp bot"""
         try:
             self.is_running = False
+            
+            # Cancel the listener task if it's running
+            if self._listener_task and not self._listener_task.done():
+                self._listener_task.cancel()
+                try:
+                    await self._listener_task
+                except asyncio.CancelledError:
+                    pass
             
             # In real implementation:
             # Disconnect from WhatsApp Web
@@ -152,6 +161,15 @@ class WhatsAppBot:
             # Check if we have a pending first message
             pending_first = self.conversation_manager.get_pending_first_message(chat_id)
             if pending_first:
+                # Store the user's incoming message first
+                await self.db.add_message(
+                    chat_id=chat_id,
+                    role='user',
+                    content=message_text or "",
+                    message_type=message_type,
+                    media_path=media_path
+                )
+                
                 # Send the manually crafted first message
                 await self.send_message(chat_id, pending_first)
                 

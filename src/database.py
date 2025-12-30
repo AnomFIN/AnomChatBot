@@ -1,11 +1,10 @@
 """
 Database manager for AnomChatBot
 """
-import os
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import select, and_, func, desc
+from sqlalchemy import select, func, desc
 from loguru import logger
 
 from src.models import Base, Conversation, Message, BotStatus, AdminLog
