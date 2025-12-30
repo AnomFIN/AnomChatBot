@@ -8,6 +8,7 @@ import os
 import sys
 import subprocess
 import shutil
+import shlex
 from pathlib import Path
 
 class Colors:
@@ -50,21 +51,39 @@ class AnomChatBotInstaller:
         print(f"{Colors.OKCYAN}ℹ {text}{Colors.ENDC}")
     
     def run_command(self, cmd, check=True, capture=True):
-        """Run shell command with error handling"""
+        """Run shell command with error handling
+        
+        Args:
+            cmd: Command as string or list of arguments
+            check: Whether to check return code
+            capture: Whether to capture output
+            
+        Note: When cmd is a string, it will be split into a list to avoid shell=True
+        """
         try:
+            # Convert string to list for safer execution without shell=True
+            if isinstance(cmd, str):
+                # Use shlex.split for proper shell-like splitting
+                cmd_list = shlex.split(cmd)
+            else:
+                cmd_list = cmd
+            
             if capture:
                 result = subprocess.run(
-                    cmd, 
-                    shell=True, 
-                    check=check, 
-                    capture_output=True, 
+                    cmd_list,
+                    shell=False,
+                    check=check,
+                    capture_output=True,
                     text=True
                 )
                 return result.returncode == 0, result.stdout, result.stderr
             else:
-                result = subprocess.run(cmd, shell=True, check=check)
+                result = subprocess.run(cmd_list, shell=False, check=check)
                 return result.returncode == 0, "", ""
         except subprocess.CalledProcessError as e:
+            return False, "", str(e)
+        except (ValueError, FileNotFoundError) as e:
+            # Handle invalid commands or commands not found
             return False, "", str(e)
     
     def check_system_requirements(self):
