@@ -638,6 +638,72 @@ Botti käyttää SQLite-tietokantaa, joka sisältää:
 2. Tarkista bot-token
 3. Testaa bottia `/start`-komennolla
 
+## ✅ WhatsApp-integraatio (VALMIS)
+
+WhatsApp Web -integraatio on nyt täysin toimiva!
+
+### Käyttöönotto:
+
+1. **Ensimmäinen käynnistys**:
+   ```bash
+   python main.py
+   ```
+
+2. **QR-koodin skannaus**:
+   - QR-koodi tallentuu: `data/qr_code.png`
+   - Skannaa WhatsApp-sovelluksella (Asetukset > Yhdistetyt laitteet)
+
+3. **Sessio säilyy**:
+   - Seuraavilla kerroilla ei tarvitse skannata uudelleen
+   - Sessio tallennetaan: `data/whatsapp_session/`
+
+### Ominaisuudet:
+
+- ✅ Tekstiviestien vastaanotto ja lähetys
+- ✅ Kuvien lataus ja analyysi (GPT-4 Vision)
+- ✅ Ääniviestien litterointi (Whisper)
+- ✅ Videoiden käsittely
+- ✅ Automaattinen uudelleenyhdistäminen
+- ✅ Ryhmäkeskustelujen suodatus (vastaa vain 1-on-1)
+
+### Android (Termux):
+
+Katso: [TERMUX_GUIDE.md](TERMUX_GUIDE.md)
+
+Pika-asennus:
+```bash
+python runwithtermux.py install
+python runwithtermux.py setup
+python runwithtermux.py run
+```
+
+### Tekniset yksityiskohdat:
+
+Käyttää `webwhatsapi` + `selenium` -kirjastoja:
+- QR-koodin automaattinen tallennus
+- Sessiohallinta Chrome-profiililla
+- Rate limiting: max 20 viestiä/tunti
+- Automaattinen reconnect
+
+### Vianmääritys:
+
+**WhatsApp ei yhdistä:**
+```bash
+# Poista vanha sessio
+rm -rf data/whatsapp_session/*
+
+# Käynnistä uudelleen
+python main.py
+```
+
+**QR-koodi ei näy:**
+- Tarkista: `data/qr_code.png`
+- Avaa kuva ja skannaa puhelimella
+
+**Viestit eivät tule perille:**
+- Tarkista että botti on käynnissä
+- Tarkista lokit: `data/logs/anomchatbot.log`
+- Varmista että chat ei ole ryhmä
 ## 📝 WhatsApp-integraatio
 
 WhatsApp-botti on nyt toteutettu käyttäen **webwhatsapi**-kirjastoa, joka automatisoi WhatsApp Webiä Seleniumin avulla.

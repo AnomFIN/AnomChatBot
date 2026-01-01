@@ -121,6 +121,41 @@ class AnomChatBotInstaller:
             self.print_error("npm is not installed!")
             return False
         
+        self.print_success("pip3 is available")
+        return True
+    
+    def check_chrome_chromium(self) -> bool:
+        """Check if Chrome/Chromium is available (for WhatsApp Web)"""
+        self.print_info("Checking for Chrome/Chromium...")
+        
+        browsers = ['chromium', 'chromium-browser', 'google-chrome', 'chrome']
+        for browser in browsers:
+            returncode, _, _ = self.run_command(f"which {browser}")
+            if returncode == 0:
+                self.print_success(f"Found: {browser}")
+                return True
+        
+        self.print_warning("Chrome/Chromium not found. WhatsApp Web may not work.")
+        self.print_info("Install with: sudo apt install chromium-browser")
+        return True  # Not fatal, return True to continue
+    
+    def install_dependencies(self) -> bool:
+        """Install Python dependencies"""
+        self.print_info("Installing Python dependencies...")
+        
+        requirements_file = self.root_dir / "requirements.txt"
+        if not requirements_file.exists():
+            self.print_error("requirements.txt not found")
+            return False
+        
+        self.print_info("This may take a few minutes...")
+        returncode, stdout, stderr = self.run_command(
+            f"pip3 install -r {requirements_file}"
+        )
+        
+        if returncode != 0:
+            self.print_error(f"Failed to install dependencies: {stderr}")
+            return False
         version = stdout.strip()
         self.print_success(f"npm found: {version}")
         
@@ -155,6 +190,26 @@ class AnomChatBotInstaller:
         
         return True
     
+    def create_directories(self) -> bool:
+        """Create necessary directories"""
+        self.print_info("Creating directories...")
+        
+        directories = [
+            "data/conversations",
+            "data/media/image",
+            "data/media/audio",
+            "data/media/video",
+            "data/media/document",
+            "data/logs",
+            "data/whatsapp_session"
+        ]
+        
+        for directory in directories:
+            path = self.root_dir / directory
+            path.mkdir(parents=True, exist_ok=True)
+        
+        self.print_success("Directories created")
+        return True
     def ask_virtual_env(self):
         """Ask if user wants to use virtual environment"""
         self.print_header("VIRTUAL ENVIRONMENT")
@@ -338,6 +393,27 @@ class AnomChatBotInstaller:
         
         print(f"  3. Use Telegram bot to control conversations\n")
         
+        if self.warnings:
+            print(f"\n{Colors.WARNING}{Colors.BOLD}Warnings:{Colors.ENDC}")
+            for warning in self.warnings:
+                print(f"   ⚠ {warning}")
+    
+    def run(self) -> bool:
+        """Run installation"""
+        self.print_header("AnomChatBot Installation")
+        
+        steps = [
+            ("System Check", self.check_system),
+            ("Python Version", self.check_python_version),
+            ("Pip Check", self.check_pip),
+            ("Browser Check", self.check_chrome_chromium),
+            ("Dependencies", self.install_dependencies),
+            ("Directories", self.create_directories),
+            ("Environment", self.setup_environment),
+            ("Git Ignore", self.setup_gitignore),
+            ("Systemd Service", self.create_systemd_service),
+            ("Verification", self.verify_installation),
+        ]
         print(f"{Colors.WARNING}Important:{Colors.ENDC}")
         print(f"  - First message must ALWAYS be sent manually")
         print(f"  - Use /ai command to enable AI after first message")
