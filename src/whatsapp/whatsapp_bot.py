@@ -69,6 +69,7 @@ class WhatsAppBot:
         self.audio_path = self.media_base_path / "audio"
         self.video_path = self.media_base_path / "video"
         self.document_path = self.media_base_path / "documents"
+        self._listener_task = None  # Store task reference
     
     async def initialize(self):
         """Initialize WhatsApp client with Selenium"""
@@ -186,6 +187,8 @@ class WhatsAppBot:
             
             # Start listener in background
             asyncio.create_task(self._message_listener())
+            # Start message listener (simulated) and store task reference
+            self._listener_task = asyncio.create_task(self._message_listener())
             
         except Exception as e:
             logger.error(f"Failed to start WhatsApp bot: {e}")
@@ -220,6 +223,16 @@ class WhatsAppBot:
                     logger.info("WebDriver closed")
                 except Exception as e:
                     logger.warning(f"Error closing WebDriver: {e}")
+            # Cancel the listener task if it's running
+            if self._listener_task and not self._listener_task.done():
+                self._listener_task.cancel()
+                try:
+                    await self._listener_task
+                except asyncio.CancelledError:
+                    pass
+            
+            # In real implementation:
+            # Disconnect from WhatsApp Web
             
             # Update bot status
             await self.db.update_bot_status(whatsapp_connected=False)
@@ -397,14 +410,23 @@ class WhatsAppBot:
             )
             
             # Check if we have a pending first message
-            pending_first = self.conversation_manager.get_pending_first_message(chat_id)
+            pending_first = await self.conversation_manager.get_pending_first_message(chat_id)
             if pending_first:
+                # Store the user's incoming message first
+                await self.db.add_message(
+                    chat_id=chat_id,
+                    role='user',
+                    content=message_text or "",
+                    message_type=message_type,
+                    media_path=media_path
+                )
+                
                 # Send the manually crafted first message
                 await self.send_message(chat_id, pending_first)
                 
                 # Mark first message as sent
                 await self.db.mark_first_message_sent(chat_id)
-                self.conversation_manager.clear_pending_first_message(chat_id)
+                await self.conversation_manager.clear_pending_first_message(chat_id)
                 
                 logger.info(f"Sent first message to {chat_id}")
                 return
@@ -623,6 +645,19 @@ class WhatsAppBot:
                 'number': contact_id,
                 'profile_pic': None
             }
+        # In real implementation:
+        # contact = await self.client.get_contact(contact_id)
+        # return {
+        #     'name': contact.name,
+        #     'number': contact.number,
+        #     'profile_pic': contact.profile_pic_url
+        # }
+        
+        return {
+            'name': 'Unknown',
+            'number': contact_id,
+            'profile_pic': None
+        }
     
     async def set_status(self, status: str):
         """

@@ -1,9 +1,8 @@
 """
 Conversation manager for AnomChatBot
 """
-import asyncio
 import time
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 from datetime import datetime
 from loguru import logger
 
@@ -24,9 +23,6 @@ class ConversationManager:
         self.db = db_manager
         self.ai = openai_manager
         self.config = config
-        
-        # Track pending first messages
-        self.pending_first_messages: Dict[str, Dict] = {}
     
     async def start_conversation(
         self,
@@ -78,6 +74,12 @@ class ConversationManager:
             temperature: AI temperature setting
             custom_settings: Additional custom settings
         """
+        # Validate tone_level and flirt_level
+        if tone_level is not None and not 0.0 <= tone_level <= 1.0:
+            raise ValueError("tone_level must be between 0.0 and 1.0")
+        if flirt_level is not None and not 0.0 <= flirt_level <= 1.0:
+            raise ValueError("flirt_level must be between 0.0 and 1.0")
+        
         # Update conversation settings
         await self.db.update_conversation_settings(
             chat_id=chat_id,
@@ -108,40 +110,41 @@ class ConversationManager:
             tone_level: Tone level (0.0 - 1.0)
             flirt_level: Flirt level (0.0 - 1.0)
         """
-        self.pending_first_messages[chat_id] = {
-            'message': message,
-            'system_prompt': system_prompt,
-            'tone_level': tone_level,
-            'flirt_level': flirt_level,
-            'timestamp': datetime.utcnow()
-        }
+        # Validate tone_level and flirt_level
+        if not 0.0 <= tone_level <= 1.0:
+            raise ValueError("tone_level must be between 0.0 and 1.0")
+        if not 0.0 <= flirt_level <= 1.0:
+            raise ValueError("flirt_level must be between 0.0 and 1.0")
         
-        # Configure conversation
-        await self.configure_conversation(
+        # Persist to database for crash recovery
+        await self.db.update_conversation_settings(
             chat_id=chat_id,
             system_prompt=system_prompt,
             tone_level=tone_level,
-            flirt_level=flirt_level
+            flirt_level=flirt_level,
+            pending_first_message=message
         )
         
-        logger.info(f"Set pending first message for {chat_id}")
+        logger.info(f"Set pending first message for {chat_id} (persisted to database)")
     
-    def get_pending_first_message(self, chat_id: str) -> Optional[str]:
+    async def get_pending_first_message(self, chat_id: str) -> Optional[str]:
         """
-        Get pending first message
+        Get pending first message from database
         
         Returns:
             First message to send or None
         """
-        pending = self.pending_first_messages.get(chat_id)
-        if pending:
-            return pending['message']
+        conversation = await self.db.get_conversation(chat_id)
+        if conversation and conversation.pending_first_message:
+            return conversation.pending_first_message
         return None
     
-    def clear_pending_first_message(self, chat_id: str):
+    async def clear_pending_first_message(self, chat_id: str):
         """Clear pending first message after it's sent"""
-        if chat_id in self.pending_first_messages:
-            del self.pending_first_messages[chat_id]
+        await self.db.update_conversation_settings(
+            chat_id=chat_id,
+            pending_first_message=None
+        )
     
     async def process_incoming_message(
         self,
