@@ -638,32 +638,142 @@ Botti käyttää SQLite-tietokantaa, joka sisältää:
 2. Tarkista bot-token
 3. Testaa bottia `/start`-komennolla
 
-## 📝 Huomiot WhatsApp-integraatiosta
+## 📝 WhatsApp-integraatio
 
-Nykyinen toteutus sisältää **skeleton-version** WhatsApp-integraatiosta. Tuotantokäyttöön tarvitset yhden seuraavista:
+WhatsApp-botti on nyt toteutettu käyttäen **webwhatsapi**-kirjastoa, joka automatisoi WhatsApp Webiä Seleniumin avulla.
 
-### Vaihtoehdot:
+### Nykyinen Toteutus
 
-1. **whatsapp-web.py** (Python)
+**Kirjasto:** webwhatsapi (Selenium-pohjainen WhatsApp Web -automatisointi)
+
+**Ominaisuudet:**
+- ✅ QR-koodin autentikointi sessiotallenuksella
+- ✅ Reaaliaikainen viestien kuuntelu
+- ✅ Teksti-, kuva-, ääni- ja videoviestien käsittely
+- ✅ Median automaattinen lataus ja tallennus
+- ✅ Automaattinen uudelleenyhdistäminen
+- ✅ Ryhmäviestien suodatus (vain yksityiskeskustelut)
+
+### Käyttöönotto
+
+1. **Asenna riippuvuudet:**
    ```bash
-   pip install whatsapp-web.py
+   pip install -r requirements.txt
+   # Sisältää: webwhatsapi, selenium, webdriver-manager
    ```
 
-2. **Baileys** (Node.js)
-   - Vakaampi ja ominaisuusrikkaampi
-   - Vaatii Node.js-ajon
+2. **Asenna Chrome-selain:**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt-get update
+   sudo apt-get install -y chromium-browser
+   
+   # macOS
+   brew install --cask google-chrome
+   
+   # Windows: Lataa ja asenna Chrome manuaalisesti
+   ```
 
-3. **WhatsApp Business API**
-   - Virallinen API
-   - Vaatii hyväksynnän Meta:lta
-   - Maksullinen
+3. **Ensimmäinen käynnistys:**
+   ```bash
+   python3 main.py
+   ```
+   - Botti avaa selaimen ja näyttää QR-koodin
+   - Skannaa QR-koodi WhatsApp-mobiilisovelluksella
+   - Sessio tallentuu automaattisesti `data/whatsapp_session/` -hakemistoon
 
-4. **Kolmannen osapuolen API**:
-   - Twilio WhatsApp API
-   - MessageBird WhatsApp API
-   - 360dialog WhatsApp API
+4. **Seuraavat käynnistykset:**
+   - Botti käyttää tallennettua sessiota
+   - Ei tarvitse skannata QR-koodia uudelleen
+   - Jos sessio vanhenee, näytetään uusi QR-koodi
 
-Katso `src/whatsapp/whatsapp_bot.py` tiedostosta integraatio-ohjeet.
+### Median tallennus
+
+Ladatut mediatiedostot tallennetaan:
+- **Kuvat:** `data/media/images/`
+- **Äänet:** `data/media/audio/`
+- **Videot:** `data/media/video/`
+- **Dokumentit:** `data/media/documents/`
+
+### Rajoitukset
+
+⚠️ **Huomioitavaa:**
+- webwhatsapi ei ole aktiivisesti ylläpidetty (viimeisin päivitys 2018)
+- Selenium-pohjainen ratkaisu voi rikkoutua WhatsApp Web -päivitysten yhteydessä
+- Ei suositella erittäin suurivolyymiseen tuotantokäyttöön
+- Saattaa kohdata WhatsAppin anti-bot -toimenpiteitä
+
+### Tuotantokäyttö - Suositukset
+
+Vakavaan tuotantokäyttöön suosittelemme siirtymistä:
+
+1. **Node.js Baileys + Python REST API**
+   - Vakain WhatsApp Web API
+   - Aktiivinen kehitys ja ylläpito
+   - Monilaitteen tuki
+   - Täydet ominaisuudet
+   
+   **Toteutus:**
+   ```bash
+   # Erillinen Node.js-palvelu
+   npm install baileys express
+   # Altista REST API Python-integraatiota varten
+   pip install whatsapp-api-py
+   ```
+
+2. **WhatsApp Business API (Virallinen)**
+   - Meta/WhatsAppin virallinen ratkaisu
+   - Luotettavin ja yhteensopivin
+   - Sovelias yrityskäyttöön
+   - Vaatii Facebook Business Manager -tilin
+   - Hinnoittelu keskusteluvolyymiin perustuen
+   
+   **Kirjastot:**
+   - `whatsapp-python` (PyPI)
+   - `PyWa` framework
+
+3. **Kolmannen osapuolen API-palvelut**
+   - **Twilio WhatsApp API**
+   - **MessageBird WhatsApp API**
+   - **360dialog WhatsApp API**
+   
+   **Edut:**
+   - Hallittu infrastruktuuri
+   - Luotettava käyttöaika
+   - Tuki sisältyy
+
+### Siirtymäpolku tuotantoon
+
+1. Käytä nykyistä toteutusta testaukseen/kehitykseen
+2. Tuotantoon ota käyttöön Baileys Node.js -palvelu
+3. Päivitä WhatsAppBot käyttämään REST API:a Seleniumin sijaan
+4. Säilytä sama rajapinta jotta ConversationManager-integraatio pysyy muuttumattomana
+
+### Vianmääritys
+
+**QR-koodi ei näy:**
+```bash
+# Tarkista Chrome-asennus
+google-chrome --version
+chromium --version
+
+# Tarkista lokitiedostot
+tail -f data/logs/anomchatbot.log
+```
+
+**Sessio ei tallennu:**
+```bash
+# Tarkista oikeudet
+ls -la data/whatsapp_session/
+chmod -R 755 data/whatsapp_session/
+```
+
+**Viestejä ei vastaanoteta:**
+- Varmista että botti on käynnissä
+- Tarkista että WhatsApp Web -yhteys on aktiivinen
+- Tarkista lokitiedostoista mahdolliset virheet
+
+Katso lisätietoja ja tuotanto-ohjeita tiedostosta `src/whatsapp/whatsapp_bot.py`.
 
 ## 🤝 Kehitys
 
@@ -696,7 +806,8 @@ Ongelmatilanteissa:
 
 ## 🎯 Tulevat ominaisuudet
 
-- [ ] WhatsApp-integraation viimeistely
+- [x] WhatsApp-integraation toteutus (webwhatsapi)
+- [ ] Siirtyminen Baileys-pohjaiseen ratkaisuun tuotantoa varten
 - [ ] Web-pohjainen hallintapaneeli
 - [ ] Monimutkaisemmat keskustelupolut
 - [ ] Automaattinen backup
