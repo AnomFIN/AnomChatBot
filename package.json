@@ -1,0 +1,28 @@
+{
+  "name": "anom-chatbot",
+  "version": "1.0.0",
+  "description": "Human-controlled chatbot bridge: WhatsApp ↔ Telegram ↔ OpenAI",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "telegram",
+    "openai",
+    "chatbot",
+    "bridge"
+  ],
+  "author": "AnomFIN",
+  "license": "MIT",
+  "dependencies": {
+    "whatsapp-web.js": "^1.24.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "openai": "^4.24.0",
+    "qrcode-terminal": "^0.12.0",
+    "dotenv": "^16.3.1",
+    "winston": "^3.11.0"
+  }
+}

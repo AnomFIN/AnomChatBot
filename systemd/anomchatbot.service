@@ -1,0 +1,27 @@
+[Unit]
+Description=AnomChatBot - WhatsApp Telegram OpenAI Bridge
+After=network.target
+
+[Service]
+Type=simple
+User=anomchatbot
+WorkingDirectory=/home/anomchatbot/AnomChatBot
+Environment="NODE_ENV=production"
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=anomchatbot
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/anomchatbot/AnomChatBot/logs /home/anomchatbot/AnomChatBot/.wwebjs_auth
+UMask=0077
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

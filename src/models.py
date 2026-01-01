@@ -2,9 +2,8 @@
 Database models for AnomChatBot
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, JSON, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, JSON, ForeignKey, func
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -22,6 +21,7 @@ class Conversation(Base):
     # Conversation settings
     is_active = Column(Boolean, default=True)
     first_message_sent = Column(Boolean, default=False)
+    pending_first_message = Column(Text)  # Persisted pending first message
     system_prompt = Column(Text)
     tone_level = Column(Float, default=0.5)  # 0.0 - 1.0
     flirt_level = Column(Float, default=0.0)  # 0.0 - 1.0
@@ -32,8 +32,8 @@ class Conversation(Base):
     settings = Column(JSON, default={})
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
     last_message_at = Column(DateTime)
     
     # Relationships
@@ -64,7 +64,7 @@ class Message(Base):
     processing_time = Column(Float)  # in seconds
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow())
     
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
@@ -95,7 +95,7 @@ class BotStatus(Base):
     
     # Timestamps
     started_at = Column(DateTime)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
     
     def __repr__(self):
         return f"<BotStatus(running={self.is_running})>"
@@ -121,7 +121,7 @@ class AdminLog(Base):
     metadata = Column(JSON)
     
     # Timestamp
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow())
     
     def __repr__(self):
         return f"<AdminLog(action='{self.action}', admin='{self.admin_username}')>"

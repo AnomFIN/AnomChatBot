@@ -151,7 +151,9 @@ class AnomChatBot:
         # Setup signal handlers
         def signal_handler(signum, frame):
             logger.info(f"Received signal {signum}")
-            asyncio.create_task(self.stop())
+            # Request shutdown by clearing the running flag.
+            # The async context will handle cleanup in `finally: await self.stop()`.
+            self.running = False
         
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)

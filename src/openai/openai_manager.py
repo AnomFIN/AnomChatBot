@@ -1,7 +1,7 @@
 """
 OpenAI integration for AnomChatBot
 """
-import asyncio
+import os
 import base64
 from typing import List, Dict, Optional, Tuple
 from openai import AsyncOpenAI
@@ -15,7 +15,16 @@ class OpenAIManager:
     def __init__(self, api_key: str, model: str = "gpt-4-turbo-preview"):
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
-        self.encoding = tiktoken.encoding_for_model("gpt-4")
+        
+        # Use tokenizer corresponding to the configured model when possible
+        try:
+            self.encoding = tiktoken.encoding_for_model(self.model)
+        except Exception as e:
+            logger.warning(
+                f"Falling back to cl100k_base tokenizer for model '{self.model}': {e}"
+            )
+            # Fallback to a generic GPT-4-class tokenizer
+            self.encoding = tiktoken.get_encoding("cl100k_base")
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""
@@ -76,7 +85,8 @@ class OpenAIManager:
     async def analyze_image(
         self,
         image_path: str,
-        prompt: str = "Kuvaile tämä kuva yksityiskohtaisesti suomeksi."
+        prompt: str = "Kuvaile tämä kuva yksityiskohtaisesti suomeksi.",
+        max_size_bytes: int = 5242880  # 5MB default
     ) -> str:
         """
         Analyze image using GPT-4 Vision
@@ -84,17 +94,32 @@ class OpenAIManager:
         Args:
             image_path: Path to image file
             prompt: Analysis prompt
+            max_size_bytes: Maximum allowed file size in bytes
             
         Returns:
             Analysis text
         """
         try:
+            # Check file size before reading
+            file_size = os.path.getsize(image_path)
+            if file_size > max_size_bytes:
+                raise ValueError(
+                    f"Image file too large: {file_size} bytes (max: {max_size_bytes} bytes)"
+                )
+            
+            # Validate file extension
+            ext = image_path.lower().split('.')[-1]
+            supported_formats = ['jpg', 'jpeg', 'png', 'gif', 'webp']
+            if ext not in supported_formats:
+                raise ValueError(
+                    f"Unsupported image format: {ext}. Supported: {', '.join(supported_formats)}"
+                )
+            
             # Read and encode image
             with open(image_path, 'rb') as image_file:
                 image_data = base64.b64encode(image_file.read()).decode('utf-8')
             
             # Determine image format
-            ext = image_path.lower().split('.')[-1]
             mime_type = f"image/{ext if ext != 'jpg' else 'jpeg'}"
             
             # Analyze image
