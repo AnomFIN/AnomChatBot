@@ -328,7 +328,7 @@ class AnomChatBotInstaller:
             shutil.rmtree(node_modules, ignore_errors=True)
         
         # Set environment variable to skip Puppeteer Chromium download
-        # Chromium will be used from system installation or downloaded at runtime
+        # Chromium must be installed on the system; Puppeteer will use the system installation only
         env = os.environ.copy()
         env['PUPPETEER_SKIP_DOWNLOAD'] = 'true'
         
