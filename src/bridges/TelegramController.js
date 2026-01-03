@@ -267,7 +267,7 @@ class TelegramController {
       // WhatsApp status
       statusText += `WhatsApp: ${status.whatsapp.ready ? '✅ Connected' : '❌ Disconnected'}\n`;
       if (status.whatsapp.lastError) {
-        statusText += `  Error: ${status.whatsapp.lastError}\n`;
+        statusText += `  Error: ${this.escapeMarkdown(status.whatsapp.lastError)}\n`;
       }
       
       // Telegram status
@@ -276,7 +276,7 @@ class TelegramController {
       // OpenAI status
       statusText += `OpenAI: ${status.ai.connected ? '✅ Connected' : '❌ Disconnected'}\n`;
       if (status.ai.lastError) {
-        statusText += `  Error: ${status.ai.lastError}\n`;
+        statusText += `  Error: ${this.escapeMarkdown(status.ai.lastError)}\n`;
       }
       
       // Active conversations
@@ -298,7 +298,7 @@ class TelegramController {
     let list = '💬 *Active Conversations*\n\n';
     
     conversations.forEach((conv, index) => {
-      list += `${index + 1}. ${conv.chatId}\n`;
+      list += `${index + 1}. ${this.escapeMarkdown(conv.chatId)}\n`;
       list += `   AI: ${conv.aiEnabled ? '✅' : '❌'} | `;
       list += `Messages: ${conv.messageCount}\n`;
       list += `   Last: ${conv.lastActivity.toLocaleString()}\n\n`;
