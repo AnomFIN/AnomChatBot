@@ -1,58 +1,167 @@
 # AnomChatBot Configuration
+# Main YAML configuration file for application settings
 
-# Bot behavior settings
 bot:
   name: "AnomChatBot"
   version: "1.0.0"
   default_language: "fi"
+  description: "Production-ready WhatsApp ↔ Telegram ↔ OpenAI bridge"
+  
+  # Response timing
   response_delay_min: 1
   response_delay_max: 3
-
-# Conversation settings
-conversation:
-  auto_archive_days: 30
-  max_history_messages: 100
-  enable_context_memory: true
   
-  # Tone settings (0.0 - 1.0)
+  # Rate limiting
+  max_requests_per_minute: 60
+  max_requests_per_hour: 1000
+
+conversation:
+  # Conversation management
+  auto_archive_days: 30
+  enable_context_memory: true
+  max_history_messages: 50
+  
+  # Default settings for new conversations
+  default_tone_level: 0.5
+  default_flirt_level: 0.0
+  default_temperature: 0.7
+  default_max_tokens: 2000
+  
+  # Tone levels (0.0 - 1.0)
   tone_levels:
     professional: 0.0
     friendly: 0.5
     casual: 0.8
     playful: 1.0
   
-  # Flirt level settings (0.0 - 1.0)
+  # Flirt levels (0.0 - 1.0)
   flirt_levels:
     none: 0.0
     subtle: 0.3
     moderate: 0.6
     high: 0.9
 
-# System prompts
-prompts:
-  base: "Olet avulias ja ystävällinen keskustelukumppani. Vastaat aina suomeksi."
-  
-  tone_modifiers:
-    professional: "Käytä ammattimaista ja asiallista kieltä."
-    friendly: "Ole ystävällinen ja lämmin sävyltäsi."
-    casual: "Ole rento ja epämuodollinen."
-    playful: "Ole leikkisä ja humoristinen."
-  
-  flirt_modifiers:
-    none: ""
-    subtle: "Voit käyttää kevyttä flirttiä ja kohteliaisuuksia."
-    moderate: "Voit flirtailla kohtuullisesti ja olla hieman seurusteleva."
-    high: "Voit olla selvästi flirttaileva ja romanttinen."
-
-# Media processing
 media:
+  # Media processing settings
   enable_image_analysis: true
   enable_video_analysis: true
   enable_audio_transcription: true
   
-  image:
-    max_width: 1920
-    max_height: 1080
+  # File size limits (bytes)
+  max_image_size: 5242880    # 5MB
+  max_video_size: 52428800   # 50MB
+  max_audio_size: 10485760   # 10MB
+  
+  # Supported formats
+  image_formats: ["jpg", "jpeg", "png", "gif", "webp", "bmp"]
+  video_formats: ["mp4", "mov", "avi", "mkv", "webm"]
+  audio_formats: ["mp3", "wav", "ogg", "m4a", "flac"]
+  
+  # Analysis settings
+  image_analysis_timeout: 30
+  video_analysis_timeout: 60
+  audio_transcription_timeout: 120
+
+prompts:
+  # Base system prompt
+  base: "Olet ystävällinen ja avulias keskustelukumppani. Vastaat suomeksi luonnollisesti ja rentosti. Pidä vastaukset lyhyinä ja keskustelevina kuin WhatsAppissa."
+  
+  # Tone modifiers
+  tone_modifiers:
+    professional: "Vastaa ammattimaisesti ja asiallisesti."
+    friendly: "Vastaa ystävällisesti ja lämpimästi."
+    casual: "Vastaa rentosti ja epämuodollisesti."
+    playful: "Vastaa leikkisästi ja humoristisesti."
+  
+  # Flirt modifiers
+  flirt_modifiers:
+    none: ""
+    subtle: "Voit olla hieman vihjaileva ja charmikkaasti flirttaileva."
+    moderate: "Flirttaile kohtuullisesti ja ole hieman koquetti."
+    high: "Flirttaile selkeästi ja ole vietteleväinen ja koquetti."
+whatsapp:
+  # WhatsApp specific settings
+  session_timeout: 3600
+  reconnect_attempts: 5
+  reconnect_delay: 10
+  
+  # Message settings
+  typing_delay: true
+  read_receipts: true
+  presence_updates: true
+  
+  # Group chat handling
+  respond_to_groups: false
+  group_mention_only: true
+
+telegram:
+  # Telegram specific settings
+  parse_mode: "Markdown"
+  disable_web_page_preview: true
+  
+  # Command settings
+  enable_commands: true
+  command_prefix: "/"
+  
+  # Notification settings
+  notify_on_start: true
+  notify_on_error: true
+  notify_on_disconnect: true
+
+openai:
+  # OpenAI API settings
+  max_retries: 3
+  retry_delay: 2
+  request_timeout: 30
+  
+  # Model fallbacks
+  fallback_models: 
+    - "gpt-4"
+    - "gpt-3.5-turbo"
+  
+  # Token management
+  max_context_tokens: 4000
+  reserve_tokens: 500
+
+security:
+  # Security settings
+  require_admin_approval: true
+  rate_limit_enabled: true
+  secure_sessions: true
+  
+  # Content filtering
+  enable_content_filter: false
+  blocked_keywords: []
+  
+  # Logging
+  log_user_data: false
+  anonymize_logs: true
+
+logging:
+  # Logging configuration
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # File settings
+  max_file_size: 10485760  # 10MB
+  backup_count: 5
+  
+  # What to log
+  log_conversations: true
+  log_media_processing: true
+  log_api_calls: false
+
+database:
+  # Database settings
+  pool_size: 5
+  max_overflow: 10
+  pool_timeout: 30
+  pool_recycle: 3600
+  
+  # Maintenance
+  auto_vacuum: true
+  backup_enabled: false
+  backup_interval_hours: 24
     compression_quality: 85
   
   video:

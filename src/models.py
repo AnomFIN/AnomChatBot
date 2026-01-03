@@ -118,7 +118,7 @@ class AdminLog(Base):
     error_message = Column(Text)
     
     # Additional data
-    metadata = Column(JSON)
+    request_data = Column(JSON)  # Renamed from metadata to avoid conflict
     
     # Timestamp
     created_at = Column(DateTime, default=lambda: datetime.utcnow())

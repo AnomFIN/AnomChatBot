@@ -1,77 +1,179 @@
 #!/usr/bin/env python3
 """
-Quick validation script for WhatsApp integration
-Shows that the implementation is in place
+AnomChatBot Installation Validation Script
+Validates the installation and checks for any issues
 """
+
+import os
 import sys
+import asyncio
+import tempfile
+import importlib
 from pathlib import Path
+from typing import List, Tuple, Dict
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent))
+class Colors:
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m' 
+    RED = '\033[91m'
+    BLUE = '\033[94m'
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
 
-print("="*60)
-print("WhatsApp Integration Validation")
-print("="*60)
 
-# Check file structure
-print("\n1. Checking file structure...")
-files_to_check = [
-    "src/whatsapp/whatsapp_bot.py",
-    "src/whatsapp/whatsapp_bot_impl.py",
-    "runwithtermux.py",
-    "TERMUX_GUIDE.md",
-    "tests/test_whatsapp.py",
-]
-
-all_files_exist = True
-for file in files_to_check:
-    file_path = Path(file)
-    if file_path.exists():
-        print(f"  ✓ {file}")
-    else:
-        print(f"  ✗ {file} MISSING")
-        all_files_exist = False
-
-if all_files_exist:
-    print("\n✓ All required files are present")
-else:
-    print("\n✗ Some files are missing")
-    sys.exit(1)
-
-# Check requirements.txt
-print("\n2. Checking requirements.txt...")
-req_file = Path("requirements.txt")
-if req_file.exists():
-    content = req_file.read_text()
-    required_packages = [
-        "webwhatsapi",
-        "selenium",
-        "qrcode",
-        "Pillow",
-        "python-telegram-bot",
-        "openai",
-        "sqlalchemy",
-    ]
+class InstallationValidator:
+    """Validates AnomChatBot installation"""
     
-    missing = []
-    for pkg in required_packages:
-        if pkg in content:
-            print(f"  ✓ {pkg}")
+    def __init__(self):
+        self.project_dir = Path(__file__).parent.absolute()
+        self.errors: List[str] = []
+        self.warnings: List[str] = []
+        self.passed_checks = 0
+        self.total_checks = 0
+    
+    def print_success(self, message: str):
+        print(f"{Colors.GREEN}✓ {message}{Colors.RESET}")
+        self.passed_checks += 1
+    
+    def print_error(self, message: str):
+        print(f"{Colors.RED}✗ {message}{Colors.RESET}")
+        self.errors.append(message)
+    
+    def print_warning(self, message: str):
+        print(f"{Colors.YELLOW}⚠ {message}{Colors.RESET}")
+        self.warnings.append(message)
+    
+    def print_info(self, message: str):
+        print(f"{Colors.BLUE}ℹ {message}{Colors.RESET}")
+    
+    def print_header(self, title: str):
+        print(f"\n{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.BLUE}{title.center(60)}{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.RESET}\n")
+    
+    def check_python_version(self):
+        """Check Python version"""
+        self.total_checks += 1
+        version = sys.version_info
+        
+        if version.major >= 3 and version.minor >= 8:
+            self.print_success(f"Python {version.major}.{version.minor}.{version.micro}")
         else:
-            print(f"  ✗ {pkg} MISSING")
-            missing.append(pkg)
+            self.print_error(f"Python 3.8+ required, found {version.major}.{version.minor}")
     
-    if not missing:
-        print("\n✓ All required packages listed")
-    else:
-        print(f"\n✗ Missing packages: {', '.join(missing)}")
-        sys.exit(1)
-else:
-    print("  ✗ requirements.txt not found")
-    sys.exit(1)
+    def check_required_files(self):
+        """Check if all required files exist"""
+        required_files = [
+            'main.py',
+            'install.py',
+            'requirements.txt',
+            'config/config.yaml',
+            'src/config.py',
+            'src/database.py',
+            'src/models.py',
+            'src/openai/openai_manager.py',
+            'src/conversation/conversation_manager.py',
+            'src/telegram/telegram_bot.py',
+            'src/whatsapp/whatsapp_bot.py',
+        ]
+        
+        for file_path in required_files:
+            self.total_checks += 1
+            full_path = self.project_dir / file_path
+            
+            if full_path.exists():
+                self.print_success(f"File exists: {file_path}")
+            else:
+                self.print_error(f"Missing required file: {file_path}")
+    
+    def check_dependencies(self):
+        """Check if all Python dependencies are installed"""
+        required_modules = [
+            ('openai', 'OpenAI API client'),
+            ('telegram', 'python-telegram-bot'),
+            ('sqlalchemy', 'SQLAlchemy ORM'),
+            ('loguru', 'Loguru logging'),
+            ('yaml', 'PyYAML'),
+            ('dotenv', 'python-dotenv'),
+            ('aiofiles', 'Async file operations'),
+            ('aiohttp', 'Async HTTP client'),
+            ('tiktoken', 'Token counting'),
+            ('PIL', 'Pillow image processing'),
+        ]
+        
+        optional_modules = [
+            ('webwhatsapi', 'WhatsApp Web integration'),
+            ('selenium', 'Web automation'),
+            ('qrcode', 'QR code generation'),
+            ('cv2', 'OpenCV image processing'),
+            ('pydub', 'Audio processing'),
+        ]
+        
+        # Check required modules
+        for module, description in required_modules:
+            self.total_checks += 1
+            try:
+                importlib.import_module(module)
+                self.print_success(f"Module: {module} ({description})")
+            except ImportError:
+                self.print_error(f"Missing required module: {module} ({description})")
+        
+        # Check optional modules
+        for module, description in optional_modules:
+            self.total_checks += 1
+            try:
+                importlib.import_module(module)
+                self.print_success(f"Optional module: {module} ({description})")
+            except ImportError:
+                self.print_warning(f"Optional module not found: {module} ({description})")
+    
+    def print_summary(self):
+        """Print validation summary"""
+        self.print_header("VALIDATION SUMMARY")
+        
+        print(f"Total checks: {Colors.BLUE}{self.total_checks}{Colors.RESET}")
+        print(f"Passed: {Colors.GREEN}{self.passed_checks}{Colors.RESET}")
+        print(f"Errors: {Colors.RED}{len(self.errors)}{Colors.RESET}")
+        print(f"Warnings: {Colors.YELLOW}{len(self.warnings)}{Colors.RESET}")
+        
+        success_rate = (self.passed_checks / self.total_checks * 100) if self.total_checks > 0 else 0
+        print(f"Success rate: {Colors.BLUE}{success_rate:.1f}%{Colors.RESET}")
+        
+        if len(self.errors) == 0:
+            print(f"\n{Colors.GREEN}{Colors.BOLD}✅ VALIDATION PASSED!{Colors.RESET}")
+            print(f"{Colors.GREEN}AnomChatBot installation appears to be correct.{Colors.RESET}")
+        else:
+            print(f"\n{Colors.RED}{Colors.BOLD}❌ VALIDATION FAILED!{Colors.RESET}")
+            print(f"{Colors.RED}Please fix the errors above before running.{Colors.RESET}")
+        
+        return len(self.errors) == 0
+    
+    def validate(self):
+        """Run complete validation"""
+        self.print_header("AnomChatBot Installation Validation")
+        
+        self.check_python_version()
+        self.check_required_files()
+        self.check_dependencies()
+        
+        return self.print_summary()
 
-# Check media directories
-print("\n3. Checking data directory structure...")
+
+def main():
+    """Main validation function"""
+    validator = InstallationValidator()
+    success = validator.validate()
+    
+    if success:
+        print(f"\n{Colors.GREEN}Ready to run AnomChatBot!{Colors.RESET}")
+        return 0
+    else:
+        return 1
+
+
+if __name__ == "__main__":
+    exit_code = main()
+    sys.exit(exit_code)
 data_dirs = [
     "data/media/image",
     "data/media/audio",
