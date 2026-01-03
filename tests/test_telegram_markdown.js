@@ -7,8 +7,9 @@
 function escapeMarkdown(text) {
   if (typeof text !== 'string') return text;
   
-  // Escape special Markdown characters: * _ [ ] ( ) ~ ` > # + - = | { } . !
-  return text.replace(/([*_\[\]()~`>#+=|{}.!\\-])/g, '\\$1');
+  // Escape special Markdown characters: * _ [ ] ( ) ~ ` > # + - = | { } . ! \
+  // Put hyphen at the beginning to avoid range interpretation
+  return text.replace(/([-*_\[\]()~`>#+=|{}.!\\])/g, '\\$1');
 }
 
 // Test cases

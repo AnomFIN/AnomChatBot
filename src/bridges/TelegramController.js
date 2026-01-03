@@ -178,8 +178,9 @@ class TelegramController {
   escapeMarkdown(text) {
     if (typeof text !== 'string') return text;
     
-    // Escape special Markdown characters: * _ [ ] ( ) ~ ` > # + - = | { } . !
-    return text.replace(/([*_\[\]()~`>#+=|{}.!\\-])/g, '\\$1');
+    // Escape special Markdown characters: * _ [ ] ( ) ~ ` > # + - = | { } . ! \
+    // Put hyphen at the beginning to avoid range interpretation
+    return text.replace(/([-*_\[\]()~`>#+=|{}.!\\])/g, '\\$1');
   }
 
   /**
@@ -226,7 +227,8 @@ class TelegramController {
       try {
         await this.bot.sendMessage(
           this.adminId,
-          `⚠️ *Failed to forward WhatsApp message*\n\nFrom: ${metadata.contact || whatsappChatId}\nError: ${error.message}`
+          `⚠️ Failed to forward WhatsApp message\n\nFrom: ${this.escapeMarkdown(metadata.contact || whatsappChatId)}\nError: ${this.escapeMarkdown(error.message)}`,
+          { parse_mode: 'Markdown' }
         );
       } catch (notifyError) {
         logger.error('Failed to send error notification:', notifyError);
