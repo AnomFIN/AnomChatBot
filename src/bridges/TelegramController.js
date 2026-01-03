@@ -43,32 +43,61 @@ class TelegramController {
     this.bot.onText(/\/start/, async (msg) => {
       if (!this.isAdmin(msg.from.id)) return;
       
-      await this.bot.sendMessage(msg.chat.id, 
-        '🤖 *AnomChatBot Control Panel*\n\n' +
-        'Available Commands:\n' +
-        '/status - System status\n' +
-        '/conversations - List active chats\n' +
-        '/help - Show help\n\n' +
-        'To respond to messages:\n' +
-        '1. Reply to forwarded message\n' +
-        '2. Use /ai to enable AI for conversation',
-        { parse_mode: 'Markdown' }
-      );
+      try {
+        await this.bot.sendMessage(msg.chat.id, 
+          '🤖 *AnomChatBot Control Panel*\n\n' +
+          'Available Commands:\n' +
+          '/status - System status\n' +
+          '/conversations - List active chats\n' +
+          '/help - Show help\n\n' +
+          'To respond to messages:\n' +
+          '1. Reply to forwarded message\n' +
+          '2. Use /ai to enable AI for conversation',
+          { parse_mode: 'Markdown' }
+        );
+      } catch (error) {
+        logger.error('Failed to send start message:', error);
+        try {
+          await this.bot.sendMessage(msg.chat.id, 'Welcome to AnomChatBot Control Panel!');
+        } catch (fallbackError) {
+          logger.error('Failed to send fallback start message:', fallbackError);
+        }
+      }
     });
 
     // Status command
     this.bot.onText(/\/status/, async (msg) => {
       if (!this.isAdmin(msg.from.id)) return;
-      await this.sendStatusUpdate(msg.chat.id);
+      try {
+        await this.sendStatusUpdate(msg.chat.id);
+      } catch (error) {
+        logger.error('Failed to send status update:', error);
+        try {
+          await this.bot.sendMessage(msg.chat.id, '❌ Failed to get status update');
+        } catch (fallbackError) {
+          logger.error('Failed to send status error message:', fallbackError);
+        }
+      }
     });
 
     // Conversations command
     this.bot.onText(/\/conversations/, async (msg) => {
       if (!this.isAdmin(msg.from.id)) return;
       
-      if (this.onListConversations) {
-        const conversations = await this.onListConversations();
-        await this.sendConversationsList(msg.chat.id, conversations);
+      try {
+        if (this.onListConversations) {
+          const conversations = await this.onListConversations();
+          await this.sendConversationsList(msg.chat.id, conversations);
+        } else {
+          await this.bot.sendMessage(msg.chat.id, 'Conversation listing not available');
+        }
+      } catch (error) {
+        logger.error('Failed to list conversations:', error);
+        try {
+          await this.bot.sendMessage(msg.chat.id, '❌ Failed to list conversations');
+        } catch (fallbackError) {
+          logger.error('Failed to send conversation error message:', fallbackError);
+        }
       }
     });
 
@@ -76,53 +105,87 @@ class TelegramController {
     this.bot.onText(/\/help/, async (msg) => {
       if (!this.isAdmin(msg.from.id)) return;
       
-      await this.bot.sendMessage(msg.chat.id,
-        '📖 *Help Guide*\n\n' +
-        '*Manual Response:*\n' +
-        'Reply to any forwarded message\n\n' +
-        '*AI Response:*\n' +
-        '1. Send first message manually\n' +
-        '2. Use format: /ai [system_prompt]\n' +
-        '   Example: /ai You are a friendly 22-year-old\n' +
-        '3. AI will handle subsequent messages\n\n' +
-        '*Settings:*\n' +
-        '/set_flirt [0.1-1.0] - Set flirt level\n' +
-        '/set_tone [friendly/distant/playful] - Set tone\n\n' +
-        '*Control:*\n' +
-        '/stop_ai - Disable AI for current chat\n' +
-        '/clear - Clear conversation history',
-        { parse_mode: 'Markdown' }
-      );
+      try {
+        await this.bot.sendMessage(msg.chat.id,
+          '📖 *Help Guide*\n\n' +
+          '*Manual Response:*\n' +
+          'Reply to any forwarded message\n\n' +
+          '*AI Response:*\n' +
+          '1. Send first message manually\n' +
+          '2. Use format: /ai \\[system\\_prompt\\]\n' +
+          '   Example: /ai You are a friendly 22-year-old\n' +
+          '3. AI will handle subsequent messages\n\n' +
+          '*Settings:*\n' +
+          '/set\\_flirt \\[0.1-1.0\\] - Set flirt level\n' +
+          '/set\\_tone \\[friendly/distant/playful\\] - Set tone\n\n' +
+          '*Control:*\n' +
+          '/stop\\_ai - Disable AI for current chat\n' +
+          '/clear - Clear conversation history',
+          { parse_mode: 'Markdown' }
+        );
+      } catch (error) {
+        logger.error('Failed to send help message:', error);
+        // Fallback with plain text to avoid Markdown issues
+        try {
+          await this.bot.sendMessage(msg.chat.id,
+            '📖 Help Guide\n\n' +
+            'Manual Response:\n' +
+            'Reply to any forwarded message\n\n' +
+            'AI Response:\n' +
+            '1. Send first message manually\n' +
+            '2. Use format: /ai [system_prompt]\n' +
+            '   Example: /ai You are a friendly 22-year-old\n' +
+            '3. AI will handle subsequent messages\n\n' +
+            'Settings:\n' +
+            '/set_flirt [0.1-1.0] - Set flirt level\n' +
+            '/set_tone [friendly/distant/playful] - Set tone\n\n' +
+            'Control:\n' +
+            '/stop_ai - Disable AI for current chat\n' +
+            '/clear - Clear conversation history'
+          );
+        } catch (fallbackError) {
+          logger.error('Failed to send fallback help message:', fallbackError);
+        }
+      }
     });
 
     // AI activation command
     this.bot.onText(/\/ai(?:\s+(.+))?/, async (msg, match) => {
       if (!this.isAdmin(msg.from.id)) return;
       
-      const systemPrompt = match[1];
-      const replyTo = msg.reply_to_message;
-      
-      if (!replyTo) {
-        await this.bot.sendMessage(msg.chat.id, 
-          '⚠️ Reply to a WhatsApp message to enable AI'
-        );
-        return;
-      }
-      
-      const whatsappChatId = this.conversationMapping.get(replyTo.message_id);
-      
-      if (!whatsappChatId) {
-        await this.bot.sendMessage(msg.chat.id, 
-          '⚠️ Could not identify WhatsApp chat. Make sure you reply to a forwarded WhatsApp message.'
-        );
-        return;
-      }
-      
-      if (this.onEnableAI) {
-        await this.onEnableAI(whatsappChatId, systemPrompt);
-        await this.bot.sendMessage(msg.chat.id, 
-          '✅ AI enabled for this conversation'
-        );
+      try {
+        const systemPrompt = match[1];
+        const replyTo = msg.reply_to_message;
+        
+        if (!replyTo) {
+          await this.bot.sendMessage(msg.chat.id, 
+            '⚠️ Reply to a WhatsApp message to enable AI'
+          );
+          return;
+        }
+        
+        const whatsappChatId = this.conversationMapping.get(replyTo.message_id);
+        
+        if (!whatsappChatId) {
+          await this.bot.sendMessage(msg.chat.id, 
+            '⚠️ Could not identify WhatsApp chat. Make sure you reply to a forwarded WhatsApp message.'
+          );
+          return;
+        }
+        
+        if (this.onEnableAI) {
+          await this.onEnableAI(whatsappChatId, systemPrompt);
+          await this.bot.sendMessage(msg.chat.id, 
+            '✅ AI enabled for this conversation'
+          );
+        }
+      } catch (error) {
+        logger.error('Failed to enable AI:', error);
+        try {
+          await this.bot.sendMessage(msg.chat.id, '❌ Failed to enable AI');
+        } catch (fallbackError) {
+          logger.error('Failed to send AI error message:', fallbackError);
+        }
       }
     });
 
@@ -130,21 +193,30 @@ class TelegramController {
     this.bot.onText(/\/stop_ai/, async (msg) => {
       if (!this.isAdmin(msg.from.id)) return;
       
-      const replyTo = msg.reply_to_message;
-      if (!replyTo) {
-        await this.bot.sendMessage(msg.chat.id, 
-          '⚠️ Reply to a WhatsApp message'
-        );
-        return;
-      }
-      
-      const whatsappChatId = this.conversationMapping.get(replyTo.message_id);
-      
-      if (whatsappChatId && this.onDisableAI) {
-        await this.onDisableAI(whatsappChatId);
-        await this.bot.sendMessage(msg.chat.id, 
-          '🛑 AI disabled for this conversation'
-        );
+      try {
+        const replyTo = msg.reply_to_message;
+        if (!replyTo) {
+          await this.bot.sendMessage(msg.chat.id, 
+            '⚠️ Reply to a WhatsApp message'
+          );
+          return;
+        }
+        
+        const whatsappChatId = this.conversationMapping.get(replyTo.message_id);
+        
+        if (whatsappChatId && this.onDisableAI) {
+          await this.onDisableAI(whatsappChatId);
+          await this.bot.sendMessage(msg.chat.id, 
+            '🛑 AI disabled for this conversation'
+          );
+        }
+      } catch (error) {
+        logger.error('Failed to disable AI:', error);
+        try {
+          await this.bot.sendMessage(msg.chat.id, '❌ Failed to disable AI');
+        } catch (fallbackError) {
+          logger.error('Failed to send disable AI error message:', fallbackError);
+        }
       }
     });
 
@@ -153,14 +225,23 @@ class TelegramController {
       if (!this.isAdmin(msg.from.id)) return;
       if (msg.text && msg.text.startsWith('/')) return; // Skip commands
       
-      const replyTo = msg.reply_to_message;
-      
-      if (replyTo && this.conversationMapping.has(replyTo.message_id)) {
-        const whatsappChatId = this.conversationMapping.get(replyTo.message_id);
+      try {
+        const replyTo = msg.reply_to_message;
         
-        if (this.onManualResponse) {
-          await this.onManualResponse(whatsappChatId, msg.text);
-          await this.bot.sendMessage(msg.chat.id, '✅ Message sent');
+        if (replyTo && this.conversationMapping.has(replyTo.message_id)) {
+          const whatsappChatId = this.conversationMapping.get(replyTo.message_id);
+          
+          if (this.onManualResponse) {
+            await this.onManualResponse(whatsappChatId, msg.text);
+            await this.bot.sendMessage(msg.chat.id, '✅ Message sent');
+          }
+        }
+      } catch (error) {
+        logger.error('Failed to handle manual response:', error);
+        try {
+          await this.bot.sendMessage(msg.chat.id, '❌ Failed to send message');
+        } catch (fallbackError) {
+          logger.error('Failed to send manual response error message:', fallbackError);
         }
       }
     });

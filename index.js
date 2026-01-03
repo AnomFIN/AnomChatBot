@@ -18,6 +18,18 @@ import logger from './src/utils/logger.js';
 // Load environment variables
 dotenv.config();
 
+// Global error handling for unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled promise rejection:', reason);
+  console.error('Unhandled promise rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception:', error);
+  console.error('Uncaught exception:', error);
+  process.exit(1);
+});
+
 class AnomChatBot {
   constructor() {
     this.validateEnvironment();
