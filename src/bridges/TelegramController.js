@@ -173,17 +173,39 @@ class TelegramController {
   }
 
   /**
+   * Escape Markdown special characters for Telegram
+   */
+  escapeMarkdown(text) {
+    if (typeof text !== 'string') return text;
+    
+    // Escape special Markdown characters: * _ [ ] ( ) ~ ` > # + - = | { } . ! \
+    // Put hyphen at the beginning to avoid range interpretation
+    return text.replace(/([-*_\[\]()~`>#+=|{}.!\\])/g, '\\$1');
+  }
+
+  /**
    * Forward WhatsApp message to Telegram
    */
   async forwardMessage(whatsappChatId, message, metadata = {}) {
     try {
       const formattedMessage = this.formatWhatsAppMessage(message, metadata);
       
-      const sent = await this.bot.sendMessage(
-        this.adminId,
-        formattedMessage,
-        { parse_mode: 'Markdown' }
-      );
+      // Try sending with Markdown first, fallback to plain text if it fails
+      let sent;
+      try {
+        sent = await this.bot.sendMessage(
+          this.adminId,
+          formattedMessage,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (parseError) {
+        // If Markdown parsing fails, send as plain text
+        logger.warn('Markdown parsing failed, sending as plain text:', parseError.message);
+        sent = await this.bot.sendMessage(
+          this.adminId,
+          formattedMessage
+        );
+      }
       
       // Store mapping for replies
       this.conversationMapping.set(sent.message_id, whatsappChatId);
@@ -200,6 +222,18 @@ class TelegramController {
     } catch (error) {
       this.lastError = error.message;
       logger.error('Failed to forward message to Telegram:', error);
+      
+      // Notify operator of the failure
+      try {
+        await this.bot.sendMessage(
+          this.adminId,
+          `⚠️ Failed to forward WhatsApp message\n\nFrom: ${this.escapeMarkdown(metadata.contact || whatsappChatId)}\nError: ${this.escapeMarkdown(error.message)}`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (notifyError) {
+        logger.error('Failed to send error notification:', notifyError);
+      }
+      
       return false;
     }
   }
@@ -211,14 +245,14 @@ class TelegramController {
     const { contact, timestamp, hasMedia, mediaType } = metadata;
     
     let formatted = `📱 *WhatsApp Message*\n`;
-    formatted += `From: ${contact || 'Unknown'}\n`;
+    formatted += `From: ${this.escapeMarkdown(contact || 'Unknown')}\n`;
     formatted += `Time: ${timestamp || new Date().toLocaleString()}\n`;
     
     if (hasMedia) {
       formatted += `Media: ${mediaType || 'attachment'}\n`;
     }
     
-    formatted += `\n${message}`;
+    formatted += `\n${this.escapeMarkdown(message)}`;
     
     return formatted;
   }
@@ -235,7 +269,7 @@ class TelegramController {
       // WhatsApp status
       statusText += `WhatsApp: ${status.whatsapp.ready ? '✅ Connected' : '❌ Disconnected'}\n`;
       if (status.whatsapp.lastError) {
-        statusText += `  Error: ${status.whatsapp.lastError}\n`;
+        statusText += `  Error: ${this.escapeMarkdown(status.whatsapp.lastError)}\n`;
       }
       
       // Telegram status
@@ -244,7 +278,7 @@ class TelegramController {
       // OpenAI status
       statusText += `OpenAI: ${status.ai.connected ? '✅ Connected' : '❌ Disconnected'}\n`;
       if (status.ai.lastError) {
-        statusText += `  Error: ${status.ai.lastError}\n`;
+        statusText += `  Error: ${this.escapeMarkdown(status.ai.lastError)}\n`;
       }
       
       // Active conversations
@@ -266,7 +300,7 @@ class TelegramController {
     let list = '💬 *Active Conversations*\n\n';
     
     conversations.forEach((conv, index) => {
-      list += `${index + 1}. ${conv.chatId}\n`;
+      list += `${index + 1}. ${this.escapeMarkdown(conv.chatId)}\n`;
       list += `   AI: ${conv.aiEnabled ? '✅' : '❌'} | `;
       list += `Messages: ${conv.messageCount}\n`;
       list += `   Last: ${conv.lastActivity.toLocaleString()}\n\n`;
