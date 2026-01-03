@@ -6,8 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js",
-    "postinstall": "npx puppeteer browsers install chrome || echo 'Chromium download failed, but continuing...'"
+    "dev": "node index.js"
   },
   "keywords": [
     "whatsapp",
@@ -19,12 +18,13 @@
   "author": "AnomFIN",
   "license": "MIT",
   "dependencies": {
-    "whatsapp-web.js": "^1.24.0",
+    "@whiskeysockets/baileys": "^6.7.7",
     "node-telegram-bot-api": "^0.66.0",
     "openai": "^4.24.0",
     "qrcode-terminal": "^0.12.0",
     "dotenv": "^16.3.1",
     "winston": "^3.11.0",
-    "puppeteer": "^22.0.0"
+    "@hapi/boom": "^10.0.1",
+    "pino": "^8.19.0"
   }
 }

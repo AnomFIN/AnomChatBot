@@ -298,13 +298,8 @@ class AnomChatBotInstaller:
             self.print_info("This is optional for Python-only operation")
             self.print_info("If WhatsApp functionality is needed, try:")
             self.print_info("  npm install")
-            self.print_info("  npx puppeteer browsers install chrome")
         else:
             self.print_success("Dependencies installed successfully")
-            
-            # Check for common issues
-            if "puppeteer" in stderr.lower() or "chromium" in stderr.lower():
-                self.warnings.append("Chromium download may have failed. If WhatsApp doesn't work, run: npx puppeteer browsers install chrome")
         
         return True
     
@@ -580,18 +575,14 @@ WantedBy=multi-user.target
         print(f"  3. Use Telegram bot to control conversations")
         print()
         
-        print(f"{Colors.WARNING}⚠ If WhatsApp fails to connect (Chrome/Chromium error):{Colors.ENDC}")
-        print(f"     {Colors.BOLD}npx puppeteer browsers install chrome{Colors.ENDC}")
-        print()
-        
-        print(f"  3. Usage:")
+        print(f"  4. Usage:")
         print(f"     • First message must ALWAYS be sent manually")
         print(f"     • Use Telegram commands to control conversations")
         print(f"     • Use /help in Telegram for all commands")
         print()
         
         if self.is_linux:
-            print(f"  4. Service management (optional):")
+            print(f"  5. Service management (optional):")
             print(f"     {Colors.BOLD}sudo systemctl start anomchatbot{Colors.ENDC}")
             print(f"     {Colors.BOLD}sudo systemctl enable anomchatbot{Colors.ENDC}")
             print()
