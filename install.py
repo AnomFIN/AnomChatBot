@@ -72,8 +72,9 @@ class AnomChatBotInstaller:
                 raise TypeError(f"cmd must be string or list, not {type(cmd).__name__}")
             
             # Use provided env or default to current environment
+            # Always use a copy to avoid unintended side effects
             if env is None:
-                env = os.environ
+                env = os.environ.copy()
             
             if capture:
                 result = subprocess.run(
