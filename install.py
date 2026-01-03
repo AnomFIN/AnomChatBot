@@ -50,13 +50,14 @@ class AnomChatBotInstaller:
         """Print info message"""
         print(f"{Colors.OKCYAN}ℹ {text}{Colors.ENDC}")
     
-    def run_command(self, cmd, check=True, capture=True):
+    def run_command(self, cmd, check=True, capture=True, env=None):
         """Run shell command with error handling
         
         Args:
             cmd: Command as string or list of arguments
             check: Whether to check return code
             capture: Whether to capture output
+            env: Optional environment variables dict
             
         Note: When cmd is a string, it will be split into a list to avoid shell=True
         """
@@ -70,17 +71,22 @@ class AnomChatBotInstaller:
             else:
                 raise TypeError(f"cmd must be string or list, not {type(cmd).__name__}")
             
+            # Use provided env or default to current environment
+            if env is None:
+                env = os.environ
+            
             if capture:
                 result = subprocess.run(
                     cmd_list,
                     shell=False,
                     check=check,
                     capture_output=True,
-                    text=True
+                    text=True,
+                    env=env
                 )
                 return result.returncode == 0, result.stdout, result.stderr
             else:
-                result = subprocess.run(cmd_list, shell=False, check=check)
+                result = subprocess.run(cmd_list, shell=False, check=check, env=env)
                 return result.returncode == 0, "", ""
         except TypeError as e:
             # Handle invalid command type
@@ -312,6 +318,7 @@ class AnomChatBotInstaller:
         
         self.print_info("Installing Node.js packages...")
         self.print_warning("This may take a few minutes...")
+        self.print_info("Note: Some deprecation warnings are expected from transitive dependencies")
         
         # Clean install
         node_modules = self.project_dir / 'node_modules'
@@ -319,8 +326,13 @@ class AnomChatBotInstaller:
             self.print_info("Removing existing node_modules...")
             shutil.rmtree(node_modules, ignore_errors=True)
         
+        # Set environment variable to skip Puppeteer Chromium download
+        # Chromium will be used from system installation or downloaded at runtime
+        env = os.environ.copy()
+        env['PUPPETEER_SKIP_DOWNLOAD'] = 'true'
+        
         # Install
-        success, stdout, stderr = self.run_command("npm install", check=False, capture=False)
+        success, stdout, stderr = self.run_command("npm install", check=False, capture=False, env=env)
         
         if not success:
             self.print_error("Failed to install dependencies")
