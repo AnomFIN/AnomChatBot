@@ -173,17 +173,38 @@ class TelegramController {
   }
 
   /**
+   * Escape Markdown special characters for Telegram
+   */
+  escapeMarkdown(text) {
+    if (typeof text !== 'string') return text;
+    
+    // Escape special Markdown characters: * _ [ ] ( ) ~ ` > # + - = | { } . !
+    return text.replace(/([*_\[\]()~`>#+=|{}.!\\-])/g, '\\$1');
+  }
+
+  /**
    * Forward WhatsApp message to Telegram
    */
   async forwardMessage(whatsappChatId, message, metadata = {}) {
     try {
       const formattedMessage = this.formatWhatsAppMessage(message, metadata);
       
-      const sent = await this.bot.sendMessage(
-        this.adminId,
-        formattedMessage,
-        { parse_mode: 'Markdown' }
-      );
+      // Try sending with Markdown first, fallback to plain text if it fails
+      let sent;
+      try {
+        sent = await this.bot.sendMessage(
+          this.adminId,
+          formattedMessage,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (parseError) {
+        // If Markdown parsing fails, send as plain text
+        logger.warn('Markdown parsing failed, sending as plain text:', parseError.message);
+        sent = await this.bot.sendMessage(
+          this.adminId,
+          formattedMessage
+        );
+      }
       
       // Store mapping for replies
       this.conversationMapping.set(sent.message_id, whatsappChatId);
@@ -200,6 +221,17 @@ class TelegramController {
     } catch (error) {
       this.lastError = error.message;
       logger.error('Failed to forward message to Telegram:', error);
+      
+      // Notify operator of the failure
+      try {
+        await this.bot.sendMessage(
+          this.adminId,
+          `⚠️ *Failed to forward WhatsApp message*\n\nFrom: ${metadata.contact || whatsappChatId}\nError: ${error.message}`
+        );
+      } catch (notifyError) {
+        logger.error('Failed to send error notification:', notifyError);
+      }
+      
       return false;
     }
   }
@@ -211,14 +243,14 @@ class TelegramController {
     const { contact, timestamp, hasMedia, mediaType } = metadata;
     
     let formatted = `📱 *WhatsApp Message*\n`;
-    formatted += `From: ${contact || 'Unknown'}\n`;
+    formatted += `From: ${this.escapeMarkdown(contact || 'Unknown')}\n`;
     formatted += `Time: ${timestamp || new Date().toLocaleString()}\n`;
     
     if (hasMedia) {
       formatted += `Media: ${mediaType || 'attachment'}\n`;
     }
     
-    formatted += `\n${message}`;
+    formatted += `\n${this.escapeMarkdown(message)}`;
     
     return formatted;
   }
