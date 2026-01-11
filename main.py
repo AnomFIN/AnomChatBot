@@ -1,10 +1,12 @@
 """
 Main application entry point for AnomChatBot
 """
+import os
 import asyncio
 import signal
 import sys
 from pathlib import Path
+from threading import Thread
 from loguru import logger
 
 # Add src to path
@@ -21,7 +23,7 @@ from src.whatsapp.whatsapp_bot import WhatsAppBot
 class AnomChatBot:
     """Main application class for AnomChatBot"""
     
-    def __init__(self):
+    def __init__(self, enable_telegram=True):
         self.config = None
         self.db = None
         self.openai = None
@@ -29,6 +31,7 @@ class AnomChatBot:
         self.telegram_bot = None
         self.whatsapp_bot = None
         self.running = False
+        self.enable_telegram = enable_telegram
     
     async def initialize(self):
         """Initialize all components"""
@@ -37,10 +40,17 @@ class AnomChatBot:
             
             # Load configuration
             self.config = get_config()
-            if not self.config.validate():
-                raise RuntimeError("Configuration validation failed")
+            
+            # Validate only required fields (skip Telegram if disabled)
+            if not self.config.openai_api_key:
+                raise RuntimeError("OPENAI_API_KEY is not set")
+            
+            if self.enable_telegram:
+                if not self.config.telegram_bot_token or not self.config.telegram_admin_ids:
+                    raise RuntimeError("Telegram configuration incomplete (set TELEGRAM_ENABLED=false to disable)")
             
             logger.info(f"Configuration loaded: {self.config.bot_name} v{self.config.bot_version}")
+            logger.info(f"Telegram mode: {'Enabled' if self.enable_telegram else 'Disabled (Web GUI only)'}")
             
             # Initialize database
             self.db = DatabaseManager(self.config.database_url)
@@ -71,15 +81,18 @@ class AnomChatBot:
             await self.whatsapp_bot.initialize()
             logger.info("WhatsApp bot initialized")
             
-            # Initialize Telegram bot
-            self.telegram_bot = TelegramBot(
-                config=self.config,
-                db_manager=self.db,
-                conversation_manager=self.conversation_manager,
-                whatsapp_bot=self.whatsapp_bot
-            )
-            await self.telegram_bot.initialize()
-            logger.info("Telegram bot initialized")
+            # Initialize Telegram bot (if enabled)
+            if self.enable_telegram:
+                self.telegram_bot = TelegramBot(
+                    config=self.config,
+                    db_manager=self.db,
+                    conversation_manager=self.conversation_manager,
+                    whatsapp_bot=self.whatsapp_bot
+                )
+                await self.telegram_bot.initialize()
+                logger.info("Telegram bot initialized")
+            else:
+                logger.info("Telegram bot disabled - use Web GUI for control")
             
             logger.success("All components initialized successfully!")
             
@@ -92,22 +105,33 @@ class AnomChatBot:
         try:
             logger.info("Starting AnomChatBot...")
             
-            # Start Telegram bot (admin panel)
-            await self.telegram_bot.start()
-            logger.info("Telegram bot started")
-            
-            # WhatsApp bot will be started via Telegram /start command
-            logger.info("WhatsApp bot ready (use /start in Telegram to activate)")
-            
-            # Update bot status
-            await self.db.update_bot_status(
-                is_running=True,
-                telegram_connected=True
-            )
+            # Start Telegram bot (admin panel) if enabled
+            if self.enable_telegram and self.telegram_bot:
+                await self.telegram_bot.start()
+                logger.info("Telegram bot started")
+                logger.info("WhatsApp bot ready (use /start in Telegram to activate)")
+                
+                # Update bot status
+                await self.db.update_bot_status(
+                    is_running=True,
+                    telegram_connected=True
+                )
+            else:
+                logger.info("WhatsApp bot ready (controlled via Web GUI)")
+                
+                # Update bot status
+                await self.db.update_bot_status(
+                    is_running=True,
+                    telegram_connected=False
+                )
             
             self.running = True
             logger.success("AnomChatBot is running!")
-            logger.info("Send /help to Telegram bot for commands")
+            
+            if self.enable_telegram:
+                logger.info("Send /help to Telegram bot for commands")
+            else:
+                logger.info("Access Web GUI at http://localhost:3001/")
             
             # Keep running
             while self.running:
@@ -128,7 +152,7 @@ class AnomChatBot:
             if self.whatsapp_bot:
                 await self.whatsapp_bot.stop()
             
-            # Stop Telegram bot
+            # Stop Telegram bot (if enabled)
             if self.telegram_bot:
                 await self.telegram_bot.stop()
             
@@ -187,10 +211,41 @@ async def main():
     
     logger.info("=" * 60)
     logger.info("AnomChatBot - AI-Powered Multi-Platform Chatbot")
+    
+    # Check if Web GUI mode is enabled
+    web_gui_enabled = os.getenv('WEB_GUI_ENABLED', 'false').lower() == 'true'
+    telegram_enabled = os.getenv('TELEGRAM_ENABLED', 'true').lower() == 'true'
+    
+    if web_gui_enabled:
+        logger.info("Mode: Web GUI + Bot")
+        logger.info(f"Telegram: {'Enabled' if telegram_enabled else 'Disabled'}")
+        
+        # Start web GUI server in a separate thread
+        from chatbotserver import run_server, bot_manager
+        web_host = os.getenv('WEB_GUI_HOST', '0.0.0.0')
+        web_port = int(os.getenv('WEB_GUI_PORT', '3001'))
+        
+        # Initialize bot manager
+        import chatbotserver
+        await chatbotserver.initialize_bot_manager(telegram_enabled)
+        
+        # Start web server in thread
+        web_thread = Thread(target=run_server, args=(web_host, web_port), daemon=True)
+        web_thread.start()
+        logger.info(f"Web GUI server started at http://{web_host}:{web_port}/")
+        
+        # Create bot instance and link to web manager
+        bot = AnomChatBot(enable_telegram=telegram_enabled)
+        chatbotserver.bot_manager.bot_instance = bot
+        
+    else:
+        logger.info("Mode: Traditional (Telegram Required)")
+        telegram_enabled = True
+        bot = AnomChatBot(enable_telegram=True)
+    
     logger.info("=" * 60)
     
-    # Create and run bot
-    bot = AnomChatBot()
+    # Run bot
     await bot.run()
 
 

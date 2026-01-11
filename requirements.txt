@@ -25,6 +25,12 @@ aiohttp>=3.9.0
 aiofiles>=23.2.0
 requests>=2.31.0
 
+# Web GUI
+Flask>=3.0.0
+Flask-CORS>=4.0.0
+Flask-SocketIO>=5.3.5
+python-socketio>=5.10.0
+
 # Utilities
 tiktoken>=0.5.1
 psutil>=5.9.6
