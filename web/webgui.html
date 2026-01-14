@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnomChatBot - Web GUI</title>
+    <link rel="stylesheet" href="webgui.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>🤖 AnomChatBot</h1>
+                <div class="status-indicators">
+                    <div class="status-item" id="whatsapp-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text">WhatsApp: <span id="whatsapp-text">Disconnected</span></span>
+                    </div>
+                    <div class="status-item" id="telegram-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Telegram: <span id="telegram-text">Disabled</span></span>
+                    </div>
+                    <div class="status-item" id="openai-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text">OpenAI: <span id="openai-text">Unknown</span></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>Conversations</h2>
+                    <button class="btn-refresh" onclick="loadConversations()" title="Refresh">🔄</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="Search conversations..." onkeyup="filterConversations()">
+                </div>
+                <div class="conversations-list" id="conversations-list">
+                    <div class="empty-state">
+                        <p>No conversations yet</p>
+                        <small>Conversations will appear here when you receive messages</small>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Chat Area -->
+            <main class="chat-area">
+                <!-- Welcome Screen -->
+                <div class="welcome-screen" id="welcome-screen">
+                    <div class="welcome-content">
+                        <h2>👋 Welcome to AnomChatBot Web GUI</h2>
+                        <p>Select a conversation from the left to start chatting</p>
+                        <div class="quick-actions">
+                            <button class="btn-primary" onclick="showSettings()">⚙️ Settings</button>
+                            <button class="btn-secondary" onclick="loadStatus()">📊 View Status</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Screen -->
+                <div class="chat-screen" id="chat-screen" style="display: none;">
+                    <div class="chat-header">
+                        <div class="chat-contact-info">
+                            <div class="contact-avatar" id="contact-avatar">👤</div>
+                            <div class="contact-details">
+                                <h3 id="contact-name">Select a conversation</h3>
+                                <p id="contact-status">No messages</p>
+                            </div>
+                        </div>
+                        <div class="chat-actions">
+                            <button class="btn-icon" onclick="loadMessages(currentChatId)" title="Refresh">🔄</button>
+                            <button class="btn-icon" onclick="closeChat()" title="Close">✖️</button>
+                        </div>
+                    </div>
+
+                    <div class="messages-container" id="messages-container">
+                        <div class="loading-messages">Loading messages...</div>
+                    </div>
+
+                    <div class="message-input-area">
+                        <textarea 
+                            id="message-input" 
+                            placeholder="Type your message here..." 
+                            rows="3"
+                            onkeydown="handleMessageKeydown(event)"
+                        ></textarea>
+                        <button class="btn-send" onclick="sendMessage()">
+                            <span class="btn-send-text">Send</span>
+                            <span class="btn-send-icon">📤</span>
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Settings Modal -->
+        <div class="modal" id="settings-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>⚙️ Settings</h2>
+                    <button class="btn-close" onclick="closeModal('settings-modal')">✖️</button>
+                </div>
+                <div class="modal-body">
+                    <div class="settings-section">
+                        <h3>General Settings</h3>
+                        <div class="setting-item">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="telegram-enabled" onchange="updateTelegramStatus()">
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-text">Enable Telegram Integration</span>
+                            </label>
+                            <p class="setting-description">When disabled, you can use the web GUI without Telegram</p>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>WhatsApp Configuration</h3>
+                        <div class="setting-item">
+                            <label>WhatsApp Session Path:</label>
+                            <input type="text" id="whatsapp-path" placeholder="./data/whatsapp_session" class="input-field">
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>API Configuration</h3>
+                        <div class="setting-item">
+                            <label>OpenAI API Key:</label>
+                            <input type="password" id="openai-key" placeholder="sk-..." class="input-field">
+                            <p class="setting-description">Your OpenAI API key (stored locally)</p>
+                        </div>
+                        <div class="setting-item">
+                            <label>OpenAI Model:</label>
+                            <select id="openai-model" class="input-field">
+                                <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
+                                <option value="gpt-4">GPT-4</option>
+                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Telegram Configuration</h3>
+                        <div class="setting-item">
+                            <label>Telegram Bot Token:</label>
+                            <input type="password" id="telegram-token" placeholder="123456:ABC-DEF..." class="input-field">
+                        </div>
+                        <div class="setting-item">
+                            <label>Telegram Admin IDs:</label>
+                            <input type="text" id="telegram-admins" placeholder="123456789,987654321" class="input-field">
+                            <p class="setting-description">Comma-separated list of admin user IDs</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeModal('settings-modal')">Cancel</button>
+                    <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Modal -->
+        <div class="modal" id="status-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>📊 Bot Status</h2>
+                    <button class="btn-close" onclick="closeModal('status-modal')">✖️</button>
+                </div>
+                <div class="modal-body">
+                    <div class="status-grid" id="status-grid">
+                        <div class="status-card">
+                            <div class="status-card-icon">🤖</div>
+                            <div class="status-card-info">
+                                <h4>Bot Status</h4>
+                                <p id="bot-running-status">Loading...</p>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-card-icon">💬</div>
+                            <div class="status-card-info">
+                                <h4>Active Conversations</h4>
+                                <p id="active-conv-count">0</p>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-card-icon">📱</div>
+                            <div class="status-card-info">
+                                <h4>WhatsApp</h4>
+                                <p id="whatsapp-status-detail">Disconnected</p>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-card-icon">✈️</div>
+                            <div class="status-card-info">
+                                <h4>Telegram</h4>
+                                <p id="telegram-status-detail">Disabled</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="status-info">
+                        <p><strong>Last Updated:</strong> <span id="status-timestamp">Never</span></p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-primary" onclick="loadStatus()">Refresh</button>
+                    <button class="btn-secondary" onclick="closeModal('status-modal')">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include Socket.IO client library -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="webgui.js"></script>
+</body>
+</html>

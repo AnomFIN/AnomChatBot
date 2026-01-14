@@ -8,15 +8,19 @@
 
 Production-ready chatbot bridge system that connects WhatsApp, Telegram, and OpenAI, controlled by a human operator.
 
+**NEW**: Now includes a beautiful Web GUI that allows you to use the bot without Telegram! See [WEBGUI.md](WEBGUI.md) for details.
+
 ### Key Features
 
-- **Human-in-the-loop**: Operator controls AI through Telegram control panel
+- **Web GUI**: Modern web interface for bot control (Telegram now optional!)
+- **Human-in-the-loop**: Operator controls AI through Telegram control panel or Web GUI
 - **First message manual**: Always requires human to initiate conversation
 - **Conversation-specific settings**: Customizable AI personality per chat
 - **Full message history**: Complete context for AI responses
 - **Media support**: Images, videos, audio messages with AI analysis
 - **Production-ready**: Auto-reconnect, error handling, logging
 - **Modular architecture**: Clean separation of concerns
+- **Real-time Updates**: WebSocket support for instant message notifications
 
 ## 🏗️ Architecture
 
@@ -73,7 +77,9 @@ AnomChatBot on ammattimaisesti toteutettu chatbot-järjestelmä, joka yhdistää
 - Mukautettu system prompt per keskustelu
 - Temperature ja muut AI-parametrit
 
-### 🛠 Hallintapaneeli (Telegram)
+### 🛠 Hallintapaneeli (Telegram tai Web GUI)
+
+**Telegram-komennot:**
 - `/start` - Käynnistä botti
 - `/stop` - Pysäytä botti
 - `/restart` - Käynnistä uudelleen
@@ -82,6 +88,14 @@ AnomChatBot on ammattimaisesti toteutettu chatbot-järjestelmä, joka yhdistää
 - `/stats` - Yksityiskohtaiset tilastot
 - `/logs` - Viimeisimmät admin-logit
 - `/help` - Ohje
+
+**Web GUI (Uusi!):**
+- Moderni web-käyttöliittymä osoitteessa http://localhost:3001/
+- Ei vaadi Telegram-bottia (valinnainen)
+- Reaaliaikaiset viestipäivitykset WebSocketin kautta
+- Keskustelujen hallinta ja viestien lähetys
+- Botin asetusten konfigurointi
+- Katso [WEBGUI.md](WEBGUI.md) lisätietoja varten
 
 ### 📊 Tietokanta ja historia
 - SQLite-tietokanta keskusteluille ja viesteille
@@ -453,9 +467,15 @@ Muokkaa `.env` tiedostoa ja lisää:
 OPENAI_API_KEY=sk-your-api-key-here
 OPENAI_MODEL=gpt-4-turbo-preview
 
-# Telegram Configuration
+# Telegram Configuration (optional if using Web GUI)
 TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
 TELEGRAM_ADMIN_IDS=123456789,987654321
+
+# Web GUI Configuration (NEW!)
+WEB_GUI_ENABLED=true
+WEB_GUI_HOST=0.0.0.0
+WEB_GUI_PORT=3001
+TELEGRAM_ENABLED=false  # Set to false to use Web GUI without Telegram
 
 # Database (default)
 DATABASE_URL=sqlite+aiosqlite:///./data/conversations.db
@@ -480,9 +500,22 @@ DATABASE_URL=sqlite+aiosqlite:///./data/conversations.db
 python3 main.py
 ```
 
+Jos Web GUI on käytössä, se on saatavilla osoitteessa: **http://localhost:3001/**
+
 ## 📱 Käyttö
 
-### Telegram-hallintapaneeli
+### Kaksi käyttötapaa:
+
+#### Tapa 1: Web GUI (Suositeltu uusille käyttäjille!)
+1. Aseta `.env` tiedostossa `WEB_GUI_ENABLED=true` ja `TELEGRAM_ENABLED=false`
+2. Käynnistä botti: `python3 main.py`
+3. Avaa selaimella: http://localhost:3001/
+4. Hallitse keskusteluja ja lähetä viestejä web-käyttöliittymän kautta
+5. **Ei vaadi Telegram-bottia!**
+
+Katso täydet ohjeet: [WEBGUI.md](WEBGUI.md)
+
+#### Tapa 2: Telegram-hallintapaneeli (Perinteinen tapa)
 
 1. Avaa Telegram ja etsi bottisi
 2. Lähetä `/start` käynnistääksesi botin
