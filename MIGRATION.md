@@ -1,6 +1,6 @@
 # Migration Progress
 
-## Current Phase: 4 — Persistence + AI + Internal Message Flow ✅
+## Current Phase: 6 — React GUI + Windows Scripts + Hardening ✅
 
 ## Phase Checklist
 
@@ -50,13 +50,47 @@
 - [x] tests/orchestrator.test.js — 15 tests: message flow, first-message rule, auto_reply toggle, AI error handling
 - [x] tests/api.test.js — 24 tests: health, conversations list/get/post, messages pagination, settings GET/PUT/validation
 - [x] 120/120 tests pass (40 config + 28 persistence + 13 ai + 15 orchestrator + 24 api)
-- [x] Server boots cleanly, all endpoints respond correctly, graceful shutdown works
-- [x] DB schema: 5 tables (_meta, conversations, messages, admin_logs, transport_status), schema_version=1
-- [x] First-message rule enforced: auto_reply=0 until operator sends first message
-- [x] Platform correction applied: 'telegram' not used as conversation platform (admin-only)
 
-### Phase 5: WhatsApp End-to-End
-### Phase 6: React GUI + Windows Scripts + Hardening
+### Phase 5: WhatsApp End-to-End ✅
+- [x] src/transport/base.js — TransportAdapter base class with common interface
+- [x] src/transport/cloud.js — WhatsApp Cloud API adapter (webhook verify + inbound + outbound)
+- [x] src/transport/baileys.js — Baileys adapter (QR auth, reconnect, multi-file auth state)
+- [x] src/transport/manager.js — TransportManager: selects adapter by WHATSAPP_MODE, lifecycle management
+- [x] src/api/webhook.js — Cloud API webhook verification + message ingestion route
+- [x] src/index.js — Updated: transport manager integration, webhook route registration
+- [x] src/api/health.js — Updated: includes transport manager status in health response
+- [x] tests/transport.test.js — 36 tests: base adapter, cloud adapter, baileys adapter, manager, webhook
+- [x] 156/156 tests pass (120 prior + 36 transport)
+
+### Phase 6: React GUI + Windows Scripts + Hardening ✅
+- [x] web/vite.config.js — Vite config with dev proxy to localhost:3001
+- [x] web/index.html — Minimal HTML shell with #root
+- [x] web/src/main.jsx — React 18 createRoot entry
+- [x] web/src/index.css — Full dark theme CSS with CSS variables
+- [x] web/src/App.jsx — Main app with tab navigation (Conversations/System/QR/Logs)
+- [x] web/src/api/client.js — Fetch wrapper for all API endpoints
+- [x] web/src/context/SocketContext.jsx — Socket.IO provider
+- [x] web/src/hooks/useSocket.js — Socket event subscription hook
+- [x] web/src/hooks/useConversations.js — Conversations + messages hooks with real-time updates
+- [x] web/src/hooks/useStatus.js — System status + QR code hooks
+- [x] web/src/components/StatusBar.jsx — Socket/WhatsApp/AI status indicators
+- [x] web/src/components/ConversationList.jsx — Searchable, sorted conversation list
+- [x] web/src/components/ConversationView.jsx — Message display + input
+- [x] web/src/components/MessageBubble.jsx — Role-based message styling
+- [x] web/src/components/SettingsPanel.jsx — Per-conversation settings form
+- [x] web/src/components/GlobalSettings.jsx — System status overview
+- [x] web/src/components/QRCodeDisplay.jsx — Baileys QR display
+- [x] web/src/components/LogsView.jsx — Real-time log stream
+- [x] src/server.js — Updated: @fastify/static, SPA fallback for non-API routes
+- [x] src/admin/telegram.js — Telegram admin bot with /start, /status, /list, /stats, /help
+- [x] src/index.js — Updated: Telegram admin init (step 9), graceful shutdown integration
+- [x] install.bat — Rewritten for Node.js (npm install, web build, .env setup)
+- [x] start.bat — Node.js server launcher with version check
+- [x] healthcheck.bat — PowerShell-based health endpoint check
+- [x] README.md — Rewritten: accurate Node.js docs, no Python references
+- [x] ARCHITECTURE.md — Updated: GUI layer, Telegram admin section, startup sequence
+- [x] MANUAL_TESTING.md — Created: 13 testing procedures
+- [x] MIGRATION_SUMMARY.md — Created: full migration record
 
 ## Blockers
 
@@ -64,4 +98,9 @@
 
 ## Decisions Log
 
-(locked decisions recorded here as phases execute)
+- Phase 1: Archive Node.js legacy to _legacy/, delete all Python files
+- Phase 2: ESM modules, Fastify 5, canonical string enums for tone/flirt
+- Phase 3: Port 3001, pino-pretty for dev logging, vitest for testing
+- Phase 4: Synchronous better-sqlite3, orchestrator as central router, first-message rule in code
+- Phase 5: Baileys first-class (not fallback), Cloud API as production recommendation, transport adapter interface
+- Phase 6: React 18 + Vite, dark theme, Telegram admin optional, no GUI authentication (local only)

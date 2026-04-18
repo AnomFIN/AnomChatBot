@@ -5,6 +5,7 @@ import { initSocket, closeSocket, getIO } from './realtime/socket.js';
 import { createAIProvider } from './ai/provider.js';
 import { createOrchestrator } from './conversation/orchestrator.js';
 import { createTransportManager } from './transport/manager.js';
+import { createTelegramAdmin } from './admin/telegram.js';
 import healthRoutes from './api/health.js';
 import conversationRoutes from './api/conversations.js';
 import settingsRoutes from './api/settings.js';
@@ -89,7 +90,16 @@ async function main() {
     fastify.log.info(`WhatsApp webhook registered at ${config.whatsapp.cloud.webhookPath}`);
   }
 
-  // ── 9. Graceful shutdown ─────────────────────────────────────────────────
+  // ── 9. Initialize Telegram admin (optional) ──────────────────────────────
+  let telegramAdmin = null;
+  if (config.telegram.enabled && config.telegram.botToken) {
+    telegramAdmin = createTelegramAdmin(config, transportManager, aiProvider, fastify.log);
+    await telegramAdmin.initialize();
+  } else {
+    fastify.log.info('Telegram admin disabled');
+  }
+
+  // ── 10. Graceful shutdown ────────────────────────────────────────────────
   let shuttingDown = false;
 
   const shutdown = async (signal) => {
@@ -97,6 +107,7 @@ async function main() {
     shuttingDown = true;
     fastify.log.info(`Received ${signal}, shutting down…`);
     try {
+      if (telegramAdmin) await telegramAdmin.shutdown();
       await transportManager.shutdown();
       closeSocket();
       await fastify.close();
@@ -115,7 +126,7 @@ async function main() {
     fastify.log.error({ err }, 'Unhandled rejection');
   });
 
-  // ── 10. Start listening ──────────────────────────────────────────────────
+  // ── 11. Start listening ──────────────────────────────────────────────────
   try {
     await fastify.listen({ host: config.host, port: config.port });
     fastify.log.info(`AnomChatBot v${config.version} ready on ${config.host}:${config.port}`);

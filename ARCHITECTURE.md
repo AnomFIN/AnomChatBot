@@ -29,24 +29,30 @@ Unified Node.js 20+ chatbot bridge: WhatsApp ↔ Telegram ↔ OpenAI, with a Rea
 ```
 src/
 ├── config/           # .env loading, validation, frozen config export
-├── transport/        # WhatsApp (Cloud API + Baileys), Telegram adapters
+├── transport/        # WhatsApp (Cloud API + Baileys) adapters
 ├── ai/               # OpenAI / OpenAI-compatible provider abstraction
 ├── conversation/     # Conversation state, prompt assembly, first-message rule
 ├── persistence/      # SQLite via better-sqlite3 — schema, migrations, CRUD
-├── api/              # Fastify HTTP routes (conversations, settings, health)
+├── api/              # Fastify HTTP routes (conversations, settings, health, webhook)
 ├── realtime/         # Socket.IO event broadcasting
-└── admin/            # Telegram bot command handlers
+└── admin/            # Telegram admin bot (optional, polling-based)
 
 web/                  # React GUI (Vite + React 18)
 ├── src/
-│   ├── components/   # StatusBar, ConversationList, ConversationView, etc.
-│   ├── hooks/        # useSocket, useConversations, useStatus
-│   ├── context/      # SocketContext provider
+│   ├── App.jsx       # Main app with tab navigation (Conversations/System/QR/Logs)
+│   ├── components/   # StatusBar, ConversationList, ConversationView, SettingsPanel,
+│   │                 #   GlobalSettings, QRCodeDisplay, LogsView, MessageBubble
+│   ├── hooks/        # useSocket, useConversations, useStatus, useQRCode
+│   ├── context/      # SocketContext provider (Socket.IO connection management)
 │   └── api/          # Fetch wrapper for Fastify endpoints
 ├── index.html
-├── vite.config.js
+├── vite.config.js    # Dev proxy to localhost:3001 for /api and /socket.io
 └── package.json
 ```
+
+### GUI Serving
+
+In production, `web/dist/` (Vite build output) is served by Fastify via `@fastify/static`. A SPA fallback routes non-API requests to `index.html`. In development, Vite's dev server proxies `/api` and `/socket.io` to the Fastify backend.
 
 ## Key Design Decisions
 
@@ -157,28 +163,32 @@ All endpoints return `{ success: boolean, data?: any, error?: string }`.
 
 ### Telegram Admin Commands
 
-Optional — enabled only when `TELEGRAM_ENABLED=true` and token is configured.
+Optional — enabled only when `TELEGRAM_ENABLED=true` and `TELEGRAM_BOT_TOKEN` is configured. Uses `node-telegram-bot-api` with polling (not webhooks). Admin-only: all commands gated by `TELEGRAM_ADMIN_IDS`.
 
-| Command               | Action                              |
-|-----------------------|-------------------------------------|
-| `/start`              | Welcome + command list              |
-| `/status`             | System health overview              |
-| `/list`               | Active conversations + last message |
-| `/stats`              | Message counts, response times      |
-| `/logs [n]`           | Last N log entries (default 10)     |
-| `/restart [transport]`| Restart a specific transport        |
-| `/stop`               | Graceful shutdown (with confirm)    |
-| `/help`               | Command reference                   |
+| Command  | Action                              |
+|----------|-------------------------------------|
+| `/start` | Welcome + command list               |
+| `/status`| System health overview               |
+| `/list`  | Active conversations + last message  |
+| `/stats` | Message counts                       |
+| `/help`  | Command reference                    |
+
+The Telegram admin reads the same database and service state as the Web GUI. It is NOT a user-facing transport — it's an admin control channel only.
 
 ### Startup Sequence
 
 1. Load and validate config (.env)
-2. Initialize SQLite (run migrations)
-3. Initialize AI provider (test connection)
-4. Initialize WhatsApp transport (Cloud or Baileys based on `WHATSAPP_MODE`)
-5. Initialize Telegram admin (if enabled)
-6. Start Fastify server (HTTP + Socket.IO + static GUI)
-7. Report ready status
+2. Create Fastify server (pino logger)
+3. Initialize SQLite (run migrations)
+4. Initialize Socket.IO
+5. Initialize AI provider (test connection)
+6. Create conversation orchestrator
+7. Initialize WhatsApp transport (Cloud API or Baileys)
+8. Register HTTP routes (health, conversations, settings, webhook)
+9. Initialize Telegram admin (if enabled)
+10. Register graceful shutdown handlers
+11. Start listening on configured host:port
+12. Serve React GUI from `web/dist/` (if built)
 
 ### Graceful Shutdown
 
@@ -192,17 +202,18 @@ Each transport initializes independently. One transport failure does not crash t
 
 ## Technology Stack
 
-| Component       | Technology                        |
-|-----------------|-----------------------------------|
-| Runtime         | Node.js 20+ (ESM)                |
-| HTTP server     | Fastify 5                         |
-| WebSocket       | Socket.IO 4                       |
-| WhatsApp        | @whiskeysockets/baileys / Cloud API |
-| Telegram        | node-telegram-bot-api             |
-| AI              | openai SDK                        |
-| Database        | better-sqlite3                    |
-| Frontend        | React 18 + Vite                   |
-| Logging         | pino + pino-pretty                |
+| Component       | Technology                          |
+|-----------------|-------------------------------------|
+| Runtime         | Node.js 20+ (ESM)                   |
+| HTTP server     | Fastify 5 + @fastify/static          |
+| WebSocket       | Socket.IO 4                          |
+| WhatsApp        | @whiskeysockets/baileys / Cloud API  |
+| Telegram        | node-telegram-bot-api (admin only)   |
+| AI              | openai SDK                           |
+| Database        | better-sqlite3                       |
+| Frontend        | React 18 + Vite 6                    |
+| Logging         | pino + pino-pretty                   |
+| Testing         | vitest                               |
 | Process         | Windows-first (install.bat, start.bat) |
 
 ---
