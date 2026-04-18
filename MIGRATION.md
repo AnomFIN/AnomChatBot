@@ -1,17 +1,25 @@
 # Migration Progress
 
-## Current Phase: 1 — Audit, Extract & Archive
+## Current Phase: 2 — Architecture & Scaffold ✅
 
 ## Phase Checklist
 
-### Phase 1: Audit, Extract & Archive
+### Phase 1: Audit, Extract & Archive ✅
 - [x] LEGACY_EXTRACTION.md created
-- [ ] Node.js files archived to _legacy/
-- [ ] Python/stale files deleted
-- [ ] .gitignore rewritten
-- [ ] Clean state validated
+- [x] Node.js files archived to _legacy/
+- [x] Python/stale files deleted
+- [x] .gitignore rewritten
+- [x] Clean state validated
 
-### Phase 2: Architecture & Scaffold
+### Phase 2: Architecture & Scaffold ✅
+- [x] ARCHITECTURE.md created
+- [x] .env.example updated (WHATSAPP_MODE, gpt-4o-mini default, canonical enums)
+- [x] package.json updated (v2.0.0, Fastify/Socket.IO/better-sqlite3 deps)
+- [x] web/package.json created (React 18, Vite, socket.io-client)
+- [x] src/ directory scaffold: config, transport, ai, conversation, persistence, api, realtime, admin
+- [x] web/ directory scaffold: src/components, src/hooks, src/context, src/api
+- [x] data/ directory with .gitkeep
+
 ### Phase 3: Database Layer
 ### Phase 4: AI Engine
 ### Phase 5: WhatsApp Cloud API Transport
