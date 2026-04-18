@@ -4,9 +4,11 @@ import { initDatabase, closeDatabase } from './persistence/database.js';
 import { initSocket, closeSocket, getIO } from './realtime/socket.js';
 import { createAIProvider } from './ai/provider.js';
 import { createOrchestrator } from './conversation/orchestrator.js';
+import { createTransportManager } from './transport/manager.js';
 import healthRoutes from './api/health.js';
 import conversationRoutes from './api/conversations.js';
 import settingsRoutes from './api/settings.js';
+import webhookRoutes from './api/webhook.js';
 
 async function main() {
   // ── 1. Load and validate config ──────────────────────────────────────────
@@ -72,12 +74,22 @@ async function main() {
   const orchestrator = createOrchestrator(config, aiProvider, io);
   fastify.log.info('Conversation orchestrator initialized');
 
-  // ── 7. Register routes ───────────────────────────────────────────────────
-  fastify.register(healthRoutes, { config, aiProvider });
+  // ── 7. Initialize WhatsApp transport ─────────────────────────────────────
+  const transportManager = createTransportManager(config, orchestrator, io, fastify.log);
+  await transportManager.initialize();
+
+  // ── 8. Register routes ───────────────────────────────────────────────────
+  fastify.register(healthRoutes, { config, aiProvider, transportManager });
   fastify.register(conversationRoutes, { orchestrator });
   fastify.register(settingsRoutes, { io });
 
-  // ── 6. Graceful shutdown ─────────────────────────────────────────────────
+  // Register webhook routes only for Cloud API mode
+  if (config.whatsapp.mode === 'cloud_api') {
+    fastify.register(webhookRoutes, { transportManager, config });
+    fastify.log.info(`WhatsApp webhook registered at ${config.whatsapp.cloud.webhookPath}`);
+  }
+
+  // ── 9. Graceful shutdown ─────────────────────────────────────────────────
   let shuttingDown = false;
 
   const shutdown = async (signal) => {
@@ -85,6 +97,7 @@ async function main() {
     shuttingDown = true;
     fastify.log.info(`Received ${signal}, shutting down…`);
     try {
+      await transportManager.shutdown();
       closeSocket();
       await fastify.close();
       closeDatabase();
@@ -102,7 +115,7 @@ async function main() {
     fastify.log.error({ err }, 'Unhandled rejection');
   });
 
-  // ── 7. Start listening ───────────────────────────────────────────────────
+  // ── 10. Start listening ──────────────────────────────────────────────────
   try {
     await fastify.listen({ host: config.host, port: config.port });
     fastify.log.info(`AnomChatBot v${config.version} ready on ${config.host}:${config.port}`);
