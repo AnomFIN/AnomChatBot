@@ -67,7 +67,7 @@ export function validateConfig(env) {
   const port = parseInteger(env.PORT, 3001);
   if (port === null) errors.push('PORT must be a valid integer');
 
-  const host = env.HOST || '0.0.0.0';
+  const host = env.HOST || '127.0.0.1';
 
   const logLevel = (env.LOG_LEVEL || 'info').toLowerCase();
   if (!VALID_LOG_LEVELS.includes(logLevel)) {
