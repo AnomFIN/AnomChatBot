@@ -11,7 +11,7 @@ import { TRANSPORT_STATES } from './base.js';
  * @param {object} orchestrator — { handleIncomingMessage, handleOperatorMessage }
  * @param {object|null} io — Socket.IO server instance
  * @param {object} logger — Pino logger
- * @returns {{ transport, initialize(), shutdown(), getStatus() }}
+ * @returns {{ initialize(): Promise<void>, shutdown(): Promise<void>, getStatus(): object, getTransport(): object|null }}
  */
 export function createTransportManager(config, orchestrator, io, logger) {
   let transport = null;
