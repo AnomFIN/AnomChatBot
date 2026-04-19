@@ -2,18 +2,35 @@ import { Server } from 'socket.io';
 
 let io = null;
 
+function getAllowedSocketOrigins() {
+  const configuredOrigins = process.env.SOCKET_IO_CORS_ORIGIN;
+
+  if (!configuredOrigins) {
+    return [];
+  }
+
+  return configuredOrigins
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 /**
  * Initialize Socket.IO on the Fastify server's underlying HTTP server.
  * Registers basic connection logging and status emit.
  */
 export function initSocket(fastify) {
-  io = new Server(fastify.server, {
-    cors: {
-      origin: '*',
-      methods: ['GET', 'POST'],
-    },
-  });
+  const allowedOrigins = getAllowedSocketOrigins();
+  const serverOptions = allowedOrigins.length > 0
+    ? {
+        cors: {
+          origin: allowedOrigins,
+          methods: ['GET', 'POST'],
+        },
+      }
+    : {};
 
+  io = new Server(fastify.server, serverOptions);
   io.on('connection', (socket) => {
     fastify.log.info(`Socket.IO: client connected (${socket.id})`);
 
