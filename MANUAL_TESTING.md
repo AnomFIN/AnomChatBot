@@ -162,10 +162,10 @@
 1. With server running, open `http://127.0.0.1:3001/api/health`.
 2. **Verify** JSON response:
    - `success: true`
-   - `data.status` is `ok` or `degraded`
-   - `data.whatsapp.status` reflects actual transport state
-   - `data.ai.status` reflects actual AI connection
-   - `data.database.status` is `ok` with conversation/message counts
+   - `data` is present
+   - WhatsApp health details reflect the actual transport state
+   - AI health details reflect the actual AI connection state
+   - Database health details include the expected conversation/message counts
 3. On Windows: run `healthcheck.bat` — **verify** summary prints correctly.
 
 ---
