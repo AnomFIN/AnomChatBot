@@ -28,8 +28,8 @@ const FLIRT_DESCRIPTIONS = {
 export function buildSystemPrompt(conversation, config) {
   const parts = [];
 
-  // Base persona — per-conversation system prompt or global default
-  const base = conversation.system_prompt || config.defaults?.systemPrompt || 'You are a helpful assistant.';
+  // Base persona — per-conversation system prompt or built-in fallback
+  const base = conversation.system_prompt || 'You are a helpful assistant.';
   parts.push(base);
 
   // Tone modifier
