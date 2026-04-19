@@ -37,7 +37,7 @@ export function createServer(config) {
     fastify.register(fastifyStatic, {
       root: WEB_DIST,
       prefix: '/',
-      wildcard: false,
+      wildcard: true,
     });
 
     // SPA fallback: non-API routes serve index.html
