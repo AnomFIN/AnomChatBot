@@ -3,10 +3,9 @@ import { getDatabase } from './database.js';
 
 /**
  * Valid platform values for conversations.
- * 'whatsapp' — added by WhatsApp transport (Phase 5)
- * 'api'      — operator-created via internal API
+ * WhatsApp-only transport values — Telegram is admin-only, not a conversation platform.
  */
-export const VALID_PLATFORMS = ['whatsapp', 'api'];
+export const VALID_PLATFORMS = ['whatsapp_baileys', 'whatsapp_cloud'];
 
 /**
  * Create a new conversation. Returns the created row.
@@ -16,8 +15,8 @@ export function createConversation({ platform, remoteId, displayName = '', defau
   const id = randomUUID();
 
   const stmt = db.prepare(`
-    INSERT INTO conversations (id, platform, remote_id, display_name, system_prompt, tone, flirt, temperature, max_tokens, max_history, auto_reply)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO conversations (id, platform, remote_id, display_name, system_prompt, tone, flirt, temperature, max_tokens, max_history, auto_reply, preset_id, first_message_sent_manually, last_message_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `);
 
   stmt.run(
@@ -32,6 +31,8 @@ export function createConversation({ platform, remoteId, displayName = '', defau
     defaults.max_tokens ?? 1000,
     defaults.max_history ?? 50,
     defaults.auto_reply ?? 0,
+    defaults.preset_id ?? null,
+    0,
   );
 
   return getConversation(id);
@@ -62,11 +63,21 @@ export function getOrCreateConversation(platform, remoteId, displayName = '', de
 }
 
 /**
- * List all conversations, sorted by updated_at descending.
+ * Find conversation by platform and remote_id.
+ */
+export function findConversationByRemote(platform, remoteId) {
+  const db = getDatabase();
+  return db.prepare(
+    'SELECT * FROM conversations WHERE platform = ? AND remote_id = ?'
+  ).get(platform, remoteId) ?? null;
+}
+
+/**
+ * List all conversations, sorted by last_message_at descending (with updated_at fallback).
  */
 export function listConversations() {
   const db = getDatabase();
-  return db.prepare('SELECT * FROM conversations ORDER BY updated_at DESC').all();
+  return db.prepare('SELECT * FROM conversations ORDER BY COALESCE(last_message_at, updated_at) DESC').all();
 }
 
 /**
@@ -79,6 +90,9 @@ export function updateConversationSettings(id, settings) {
   const allowed = [
     'system_prompt', 'tone', 'flirt', 'temperature',
     'max_tokens', 'max_history', 'auto_reply', 'display_name',
+    'preset_id', 'ai_provider', 'ai_base_url', 'ai_model',
+    'profile_photo_url', 'reply_delay_min', 'reply_delay_max',
+    'first_message_sent_manually',
   ];
 
   const updates = [];
@@ -104,11 +118,11 @@ export function updateConversationSettings(id, settings) {
 }
 
 /**
- * Touch updated_at timestamp on a conversation.
+ * Touch updated_at and last_message_at timestamps on a conversation.
  */
 export function touchConversation(id) {
   const db = getDatabase();
-  db.prepare("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?").run(id);
+  db.prepare("UPDATE conversations SET updated_at = datetime('now'), last_message_at = datetime('now') WHERE id = ?").run(id);
 }
 
 /**

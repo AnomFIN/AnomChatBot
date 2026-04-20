@@ -133,29 +133,98 @@ export class WhatsAppCloudTransport extends TransportAdapter {
 
           let content = '';
           let mediaInfo = null;
+          let downloadMedia = null;
 
           if (msg.type === 'text') {
             content = msg.text?.body ?? '';
           } else if (msg.type === 'image') {
             content = msg.image?.caption ?? '[Image]';
-            mediaInfo = { media_type: 'image', media_url: msg.image?.id ?? '' };
+            mediaInfo = {
+              media_type: 'image',
+              media_url: msg.image?.id ?? '',
+              media_mime_type: msg.image?.mime_type ?? 'image/jpeg',
+            };
+            downloadMedia = this._createCloudMediaDownloader(msg.image?.id);
           } else if (msg.type === 'audio') {
             content = '[Audio message]';
-            mediaInfo = { media_type: 'audio', media_url: msg.audio?.id ?? '' };
+            mediaInfo = {
+              media_type: 'audio',
+              media_url: msg.audio?.id ?? '',
+              media_mime_type: msg.audio?.mime_type ?? 'audio/ogg',
+            };
+            downloadMedia = this._createCloudMediaDownloader(msg.audio?.id);
+          } else if (msg.type === 'video') {
+            content = msg.video?.caption ?? '[Video]';
+            mediaInfo = {
+              media_type: 'video',
+              media_url: msg.video?.id ?? '',
+              media_mime_type: msg.video?.mime_type ?? 'video/mp4',
+            };
+            downloadMedia = this._createCloudMediaDownloader(msg.video?.id);
+          } else if (msg.type === 'document') {
+            content = msg.document?.filename ?? '[Document]';
+            mediaInfo = {
+              media_type: 'document',
+              media_url: msg.document?.id ?? '',
+              media_mime_type: msg.document?.mime_type ?? 'application/octet-stream',
+              original_name: msg.document?.filename ?? null,
+            };
+            downloadMedia = this._createCloudMediaDownloader(msg.document?.id);
           } else {
             content = `[Unsupported message type: ${msg.type}]`;
           }
 
-          this._log('info', `Inbound message from ${from}`, { type: msg.type });
+          this._log('info', `Inbound message from ${from}`, { type: msg.type, mediaType: mediaInfo?.media_type });
 
           this.emit('message', {
             from,
             displayName,
             content,
             mediaInfo,
+            downloadMedia,
           });
         }
       }
     }
+  }
+
+  /**
+   * Create a media download function for Cloud API.
+   * Cloud API requires two steps: GET media URL, then download the binary.
+   * Returns an async function that produces a Buffer.
+   */
+  _createCloudMediaDownloader(mediaId) {
+    if (!mediaId) return null;
+    const accessToken = this._config.accessToken;
+
+    return async () => {
+      // Step 1: Fetch the media URL from Graph API
+      const metaRes = await fetch(`${GRAPH_API_BASE}/${mediaId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!metaRes.ok) {
+        throw new Error(`Cloud API media metadata fetch failed: HTTP ${metaRes.status}`);
+      }
+
+      const metaData = await metaRes.json();
+      const mediaUrl = metaData.url;
+
+      if (!mediaUrl) {
+        throw new Error('Cloud API media URL not found in response');
+      }
+
+      // Step 2: Download the actual binary from the URL
+      const downloadRes = await fetch(mediaUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!downloadRes.ok) {
+        throw new Error(`Cloud API media download failed: HTTP ${downloadRes.status}`);
+      }
+
+      const arrayBuffer = await downloadRes.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    };
   }
 }

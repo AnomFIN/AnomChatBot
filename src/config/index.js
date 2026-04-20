@@ -196,6 +196,8 @@ export function validateConfig(env) {
       temperature: defaultTemperature,
       maxTokens: defaultMaxTokens,
       maxHistory: defaultMaxHistory,
+      replyDelayMin: parseInteger(env.DEFAULT_REPLY_DELAY_MIN, 3000),
+      replyDelayMax: parseInteger(env.DEFAULT_REPLY_DELAY_MAX, 8000),
     }),
     media: Object.freeze({
       storageDir: mediaStorageDir,

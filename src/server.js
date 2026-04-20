@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
@@ -8,6 +8,7 @@ import fastifyStatic from '@fastify/static';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = join(__dirname, '../web/dist');
+const MEDIA_DIR = join(process.cwd(), 'data', 'media');
 
 /**
  * Create and configure the Fastify server instance.
@@ -32,7 +33,7 @@ export function createServer(config) {
   fastify.register(cors, { origin: true });
   fastify.register(formbody);
 
-  // Serve React GUI build if it exists
+  // Serve React GUI build if it exists (registered first to provide reply.sendFile)
   if (existsSync(join(WEB_DIST, 'index.html'))) {
     fastify.register(fastifyStatic, {
       root: WEB_DIST,
@@ -42,7 +43,7 @@ export function createServer(config) {
 
     // SPA fallback: non-API routes serve index.html
     fastify.setNotFoundHandler((request, reply) => {
-      if (request.url.startsWith('/api/') || request.url.startsWith('/webhook/')) {
+      if (request.url.startsWith('/api/') || request.url.startsWith('/webhook/') || request.url.startsWith('/media/')) {
         reply.code(404).send({ success: false, error: 'Not found' });
       } else {
         reply.sendFile('index.html');
@@ -50,7 +51,7 @@ export function createServer(config) {
     });
   } else {
     fastify.setNotFoundHandler((request, reply) => {
-      if (request.url.startsWith('/api/') || request.url.startsWith('/webhook/')) {
+      if (request.url.startsWith('/api/') || request.url.startsWith('/webhook/') || request.url.startsWith('/media/')) {
         reply.code(404).send({ success: false, error: 'Not found' });
       } else {
         reply.code(200).type('text/html').send(
@@ -61,6 +62,16 @@ export function createServer(config) {
       }
     });
   }
+
+  // Serve stored media files at /media/{filename} (decorateReply:false since static already registered above)
+  mkdirSync(MEDIA_DIR, { recursive: true });
+  fastify.register(fastifyStatic, {
+    root: MEDIA_DIR,
+    prefix: '/media/',
+    decorateReply: false,
+    cacheControl: true,
+    maxAge: 86400000, // 24h cache
+  });
 
   return fastify;
 }

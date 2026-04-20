@@ -12,6 +12,13 @@ const STATUS_COLORS = {
   idle: '#6b7280',
 };
 
+const ACTIVITY_LABELS = {
+  thinking: '🤔 Thinking…',
+  typing: '⌨️ Typing…',
+  sending: '📤 Sending…',
+  idle: null,
+};
+
 function Dot({ color }) {
   return (
     <span
@@ -27,7 +34,7 @@ function Dot({ color }) {
   );
 }
 
-export default function StatusBar({ status }) {
+export default function StatusBar({ status, botActivities }) {
   const { connected: socketConnected } = useSocketContext();
 
   if (!status) {
@@ -38,6 +45,12 @@ export default function StatusBar({ status }) {
   const waMode = status.whatsapp?.mode || status.modes?.whatsappMode || '?';
   const aiConnected = status.ai?.connected;
   const aiModel = status.ai?.model || '?';
+  const pendingReplies = status.orchestrator?.pendingReplies ?? 0;
+
+  // Count active bot activities
+  const activeActivities = botActivities
+    ? Object.values(botActivities).filter(s => s && s !== 'idle').length
+    : 0;
 
   return (
     <div className="status-bar">
@@ -53,6 +66,17 @@ export default function StatusBar({ status }) {
         <Dot color={aiConnected ? '#22c55e' : '#ef4444'} />
         <span>AI: {aiConnected ? aiModel : 'disconnected'}</span>
       </div>
+      {pendingReplies > 0 && (
+        <div className="status-item status-pending">
+          <Dot color="#eab308" />
+          <span>{pendingReplies} pending {pendingReplies === 1 ? 'reply' : 'replies'}</span>
+        </div>
+      )}
+      {activeActivities > 0 && (
+        <div className="status-item status-activity">
+          <span>{activeActivities} active</span>
+        </div>
+      )}
       {status.version && (
         <div className="status-item status-version">v{status.version}</div>
       )}

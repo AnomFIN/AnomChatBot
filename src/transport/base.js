@@ -16,10 +16,11 @@ export const TRANSPORT_STATES = Object.freeze({
 
 /**
  * Base class for transport adapters.
- * Subclasses must implement: initialize(), sendMessage(), shutdown(), getStatus().
+ * Subclasses must implement: initialize(), sendMessage(), shutdown().
+ * Subclasses may implement: sendPresenceUpdate(), markRead(), fetchProfilePhoto().
  *
  * Events emitted:
- *  - 'message'        → { from, displayName, content, mediaInfo? }
+ *  - 'message'        → { from, displayName, content, mediaInfo?, messageKey? }
  *  - 'status_change'  → { status, details? }
  *  - 'qr'             → { qrDataUrl }  (Baileys only)
  */
@@ -50,6 +51,35 @@ export class TransportAdapter extends EventEmitter {
   /** Gracefully disconnect and clean up. */
   async shutdown() {
     throw new Error(`${this.name}: shutdown() not implemented`);
+  }
+
+  /**
+   * Send presence update (online, typing, etc.).
+   * Not all transports support this — default is no-op.
+   * @param {string} type — 'available' | 'unavailable' | 'composing' | 'paused'
+   * @param {string} [jid] — recipient JID (required for composing/paused)
+   */
+  async sendPresenceUpdate(type, jid) {
+    // No-op by default
+  }
+
+  /**
+   * Mark messages as read (blue ticks).
+   * Not all transports support this — default is no-op.
+   * @param {object[]} messageKeys — transport-specific message keys
+   */
+  async markRead(messageKeys) {
+    // No-op by default
+  }
+
+  /**
+   * Fetch profile photo URL for a contact.
+   * Not all transports support this — default returns null.
+   * @param {string} remoteId — phone number or JID
+   * @returns {Promise<string|null>} — Profile photo URL or null
+   */
+  async fetchProfilePhoto(remoteId) {
+    return null;
   }
 
   /**

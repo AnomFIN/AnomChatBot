@@ -11,6 +11,19 @@ const BACKOFF_DELAYS = [2000, 5000, 10000, 30000, 60000]; // ms
  *
  * Uses @whiskeysockets/baileys to emulate WhatsApp Web protocol.
  * Handles QR auth, session persistence, reconnection with backoff.
+ *
+ * Presence support:
+ * - sendPresenceUpdate('available') — go online
+ * - sendPresenceUpdate('unavailable') — go offline
+ * - sendPresenceUpdate('composing', jid) — show typing
+ * - sendPresenceUpdate('paused', jid) — stop typing
+ * - markRead(keys) — mark messages as read (blue ticks)
+ * - fetchProfilePhoto(jid) — get profile picture URL
+ *
+ * HONEST LIMITATIONS:
+ * - "last seen" is NOT controllable. WhatsApp controls this server-side.
+ * - Presence updates are best-effort; WhatsApp may throttle or ignore them.
+ * - This is an unofficial API — WhatsApp can ban numbers or break the protocol.
  */
 export class WhatsAppBaileysTransport extends TransportAdapter {
   constructor(config) {
@@ -190,6 +203,7 @@ export class WhatsAppBaileysTransport extends TransportAdapter {
 
       let content = '';
       let mediaInfo = null;
+      let downloadMedia = null;
 
       const msgContent = msg.message;
       if (!msgContent) continue;
@@ -200,16 +214,45 @@ export class WhatsAppBaileysTransport extends TransportAdapter {
         content = msgContent.extendedTextMessage.text;
       } else if (msgContent.imageMessage) {
         content = msgContent.imageMessage.caption ?? '[Image]';
-        mediaInfo = { media_type: 'image', media_url: msg.key.id ?? '' };
+        mediaInfo = {
+          media_type: 'image',
+          media_url: msg.key.id ?? '',
+          media_mime_type: msgContent.imageMessage.mimetype ?? 'image/jpeg',
+          media_size_bytes: msgContent.imageMessage.fileLength
+            ? Number(msgContent.imageMessage.fileLength) : null,
+        };
+        downloadMedia = this._createMediaDownloader(msg);
       } else if (msgContent.audioMessage) {
         content = '[Audio message]';
-        mediaInfo = { media_type: 'audio', media_url: msg.key.id ?? '' };
+        mediaInfo = {
+          media_type: 'audio',
+          media_url: msg.key.id ?? '',
+          media_mime_type: msgContent.audioMessage.mimetype ?? 'audio/ogg',
+          media_size_bytes: msgContent.audioMessage.fileLength
+            ? Number(msgContent.audioMessage.fileLength) : null,
+        };
+        downloadMedia = this._createMediaDownloader(msg);
       } else if (msgContent.videoMessage) {
         content = msgContent.videoMessage.caption ?? '[Video]';
-        mediaInfo = { media_type: 'video', media_url: msg.key.id ?? '' };
+        mediaInfo = {
+          media_type: 'video',
+          media_url: msg.key.id ?? '',
+          media_mime_type: msgContent.videoMessage.mimetype ?? 'video/mp4',
+          media_size_bytes: msgContent.videoMessage.fileLength
+            ? Number(msgContent.videoMessage.fileLength) : null,
+        };
+        downloadMedia = this._createMediaDownloader(msg);
       } else if (msgContent.documentMessage) {
         content = msgContent.documentMessage.fileName ?? '[Document]';
-        mediaInfo = { media_type: 'document', media_url: msg.key.id ?? '' };
+        mediaInfo = {
+          media_type: 'document',
+          media_url: msg.key.id ?? '',
+          media_mime_type: msgContent.documentMessage.mimetype ?? 'application/octet-stream',
+          media_size_bytes: msgContent.documentMessage.fileLength
+            ? Number(msgContent.documentMessage.fileLength) : null,
+          original_name: msgContent.documentMessage.fileName ?? null,
+        };
+        downloadMedia = this._createMediaDownloader(msg);
       } else {
         content = '[Unsupported message type]';
       }
@@ -217,15 +260,36 @@ export class WhatsAppBaileysTransport extends TransportAdapter {
       // Normalize Baileys JID to phone number (strip @s.whatsapp.net)
       const phoneNumber = from.replace(/@s\.whatsapp\.net$/, '').replace(/@g\.us$/, '');
 
-      this._log('info', `Inbound message from ${phoneNumber}`, { pushName });
+      this._log('info', `Inbound message from ${phoneNumber}`, { pushName, mediaType: mediaInfo?.media_type });
 
       this.emit('message', {
         from: phoneNumber,
         displayName: pushName,
         content,
         mediaInfo,
+        downloadMedia,
+        messageKey: msg.key,
       });
     }
+  }
+
+  /**
+   * Create a media download function for a Baileys message.
+   * Returns an async function that produces a Buffer.
+   * The download is lazy — only called when the orchestrator is ready.
+   */
+  _createMediaDownloader(msg) {
+    return async () => {
+      if (!this._socket) throw new Error('Baileys socket not available');
+      // Dynamic import to resolve downloadMediaMessage at call time
+      const baileys = await import('@whiskeysockets/baileys');
+      const downloadMediaMessage = baileys.downloadMediaMessage ?? baileys.default?.downloadMediaMessage;
+      if (!downloadMediaMessage) {
+        throw new Error('downloadMediaMessage not available in Baileys');
+      }
+      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    };
   }
 
   /**
@@ -264,6 +328,62 @@ export class WhatsAppBaileysTransport extends TransportAdapter {
     } catch (err) {
       this._log('error', `Send error to ${to}: ${err.message}`);
       return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Send presence update via Baileys.
+   * @param {string} type — 'available' | 'unavailable' | 'composing' | 'paused'
+   * @param {string} [jid] — required for composing/paused
+   */
+  async sendPresenceUpdate(type, jid) {
+    if (!this._socket || this._status !== TRANSPORT_STATES.CONNECTED) return;
+
+    try {
+      if (type === 'composing' || type === 'paused') {
+        if (jid) {
+          await this._socket.sendPresenceUpdate(type, jid);
+        }
+      } else {
+        // 'available' or 'unavailable' — global presence
+        await this._socket.sendPresenceUpdate(type);
+      }
+    } catch (err) {
+      this._log('debug', `Presence update (${type}) failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Mark messages as read (blue ticks) via Baileys.
+   * @param {object[]} messageKeys — Array of Baileys message key objects
+   */
+  async markRead(messageKeys) {
+    if (!this._socket || this._status !== TRANSPORT_STATES.CONNECTED) return;
+    if (!messageKeys || messageKeys.length === 0) return;
+
+    try {
+      await this._socket.readMessages(messageKeys);
+    } catch (err) {
+      this._log('debug', `Mark read failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Fetch profile photo URL for a contact.
+   * @param {string} remoteId — phone number or JID
+   * @returns {Promise<string|null>}
+   */
+  async fetchProfilePhoto(remoteId) {
+    if (!this._socket || this._status !== TRANSPORT_STATES.CONNECTED) return null;
+
+    const jid = remoteId.includes('@') ? remoteId : `${remoteId}@s.whatsapp.net`;
+
+    try {
+      const url = await this._socket.profilePictureUrl(jid, 'image');
+      return url ?? null;
+    } catch {
+      // Profile picture not available or privacy setting blocks it
+      return null;
     }
   }
 

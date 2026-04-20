@@ -295,6 +295,7 @@ describe('WhatsAppCloudTransport', () => {
         displayName: 'Test User',
         content: 'Hello from WhatsApp',
         mediaInfo: null,
+        downloadMedia: null,
       });
     });
 
@@ -323,7 +324,8 @@ describe('WhatsAppCloudTransport', () => {
       expect(handler).toHaveBeenCalledTimes(1);
       const call = handler.mock.calls[0][0];
       expect(call.content).toBe('Check this out');
-      expect(call.mediaInfo).toEqual({ media_type: 'image', media_url: 'img-123' });
+      expect(call.mediaInfo).toEqual({ media_type: 'image', media_url: 'img-123', media_mime_type: 'image/jpeg' });
+      expect(typeof call.downloadMedia).toBe('function');
     });
 
     it('emits message event for audio messages', () => {
@@ -351,7 +353,8 @@ describe('WhatsAppCloudTransport', () => {
       expect(handler).toHaveBeenCalledTimes(1);
       const call = handler.mock.calls[0][0];
       expect(call.content).toBe('[Audio message]');
-      expect(call.mediaInfo).toEqual({ media_type: 'audio', media_url: 'audio-456' });
+      expect(call.mediaInfo).toEqual({ media_type: 'audio', media_url: 'audio-456', media_mime_type: 'audio/ogg' });
+      expect(typeof call.downloadMedia).toBe('function');
     });
 
     it('handles unsupported message types', () => {
@@ -495,20 +498,27 @@ describe('createTransportManager', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(orchestrator.handleIncomingMessage).toHaveBeenCalledWith(
-      'whatsapp',
+      'whatsapp_cloud',
       '555',
       'Jane',
       'Hi there',
       null,
+      null,
+      undefined,
     );
 
     await manager.shutdown();
   });
 
-  it('sends AI reply back via transport when auto_reply is on', async () => {
+  it('does not send AI reply directly — orchestrator handles delayed sending', async () => {
+    // Transport manager no longer sends AI replies.
+    // The orchestrator now handles sending via the delay manager + presence manager.
+    // This test verifies the transport manager just passes the message to the orchestrator
+    // without calling sendMessage itself.
     const orchestrator = {
       handleIncomingMessage: vi.fn().mockResolvedValue({
-        aiReply: { content: 'Hello from AI', id: 1 },
+        aiReply: null,
+        reason: 'reply_scheduled',
       }),
       handleOperatorMessage: vi.fn(),
     };
@@ -516,7 +526,7 @@ describe('createTransportManager', () => {
     const manager = createTransportManager(cloudConfig, orchestrator, null, silentLogger);
     await manager.initialize();
 
-    // Mock fetch for sending
+    // Mock fetch to verify it is NOT called by the transport manager
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ messages: [{ id: 'wamid.reply' }] }),
@@ -538,9 +548,9 @@ describe('createTransportManager', () => {
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.text.body).toBe('Hello from AI');
+    // Transport manager should NOT call fetch — it just passes to orchestrator
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(orchestrator.handleIncomingMessage).toHaveBeenCalledTimes(1);
 
     delete globalThis.fetch;
     await manager.shutdown();
