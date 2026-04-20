@@ -55,6 +55,7 @@ describe('Orchestrator — handleIncomingMessage', () => {
   });
 
   afterEach(() => {
+    orchestrator.shutdown();
     closeDatabase();
     cleanupTestDb();
   });
@@ -118,6 +119,7 @@ describe('Orchestrator — first-message rule', () => {
   });
 
   afterEach(() => {
+    orchestrator.shutdown();
     closeDatabase();
     cleanupTestDb();
   });
@@ -137,27 +139,29 @@ describe('Orchestrator — first-message rule', () => {
     expect(opResult.conversation.auto_reply).toBe(1);
   });
 
-  it('after operator message, incoming triggers AI reply', async () => {
+  it('after operator message, incoming schedules delayed AI reply', async () => {
     // Create conversation
     const incoming = await orchestrator.handleIncomingMessage('api', 'rule-3', 'User', 'Hello');
 
     // Operator sends first message (flips auto_reply)
     await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hey!');
 
-    // Now incoming message should trigger AI
+    // Now incoming message should schedule a delayed AI reply (not immediate)
     const second = await orchestrator.handleIncomingMessage('api', 'rule-3', 'User', 'How are you?');
-    expect(second.aiReply).not.toBeNull();
-    expect(second.aiReply.content).toBe('AI says hello');
-    expect(mockAI.generateReply).toHaveBeenCalled();
+    expect(second.aiReply).toBeNull();
+    expect(second.reason).toBe('reply_scheduled');
+    // AI is NOT called immediately — it fires after the delay timer
+    expect(mockAI.generateReply).not.toHaveBeenCalled();
   });
 
-  it('AI reply is persisted in the database', async () => {
+  it('persists user and operator messages immediately (AI reply is delayed)', async () => {
     const incoming = await orchestrator.handleIncomingMessage('api', 'rule-4', 'User', 'Hey');
     await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hi!');
     await orchestrator.handleIncomingMessage('api', 'rule-4', 'User', 'Question?');
 
-    // Messages: user "Hey", assistant "Hi!" (operator), user "Question?", assistant "AI says hello"
-    expect(getMessageCount(incoming.conversation.id)).toBe(4);
+    // Messages: user "Hey", assistant "Hi!" (operator), user "Question?"
+    // AI reply is delayed via timer, NOT persisted yet
+    expect(getMessageCount(incoming.conversation.id)).toBe(3);
   });
 });
 
@@ -175,6 +179,7 @@ describe('Orchestrator — handleOperatorMessage', () => {
   });
 
   afterEach(() => {
+    orchestrator.shutdown();
     closeDatabase();
     cleanupTestDb();
   });
@@ -229,7 +234,7 @@ describe('Orchestrator — AI error handling', () => {
     cleanupTestDb();
   });
 
-  it('returns ai_error reason when AI fails', async () => {
+  it('schedules reply instead of calling AI immediately (errors handled during delay)', async () => {
     const failingAI = {
       generateReply: vi.fn().mockRejectedValue(new Error('API down')),
       testConnection: vi.fn(),
@@ -242,10 +247,14 @@ describe('Orchestrator — AI error handling', () => {
     const incoming = await orchestrator.handleIncomingMessage('api', 'err-1', 'User', 'Hello');
     await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hi!');
 
-    // Now incoming should try AI and fail gracefully
+    // Now incoming should schedule a delayed reply (AI errors happen asynchronously)
     const result = await orchestrator.handleIncomingMessage('api', 'err-1', 'User', 'Question?');
     expect(result.aiReply).toBeNull();
-    expect(result.reason).toBe('ai_error');
-    expect(result.error).toBeTruthy();
+    expect(result.reason).toBe('reply_scheduled');
+    // AI was NOT called yet — it will be called when the delay timer fires
+    expect(failingAI.generateReply).not.toHaveBeenCalled();
+
+    // Clean up: shutdown to clear pending timers
+    orchestrator.shutdown();
   });
 });

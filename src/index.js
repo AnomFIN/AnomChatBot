@@ -10,6 +10,7 @@ import healthRoutes from './api/health.js';
 import conversationRoutes from './api/conversations.js';
 import settingsRoutes from './api/settings.js';
 import webhookRoutes from './api/webhook.js';
+import presetRoutes from './api/presets.js';
 
 async function main() {
   // ── 1. Load and validate config ──────────────────────────────────────────
@@ -46,7 +47,7 @@ async function main() {
   // ── 3. Initialize database ───────────────────────────────────────────────
   try {
     initDatabase(config);
-    fastify.log.info('Database initialized');
+    fastify.log.info('Database initialized (schema v2)');
   } catch (err) {
     fastify.log.fatal({ err }, 'Failed to initialize database');
     process.exit(1);
@@ -70,19 +71,28 @@ async function main() {
     fastify.log.warn('AI provider not configured — no API key set');
   }
 
-  // ── 6. Create orchestrator ───────────────────────────────────────────────
+  // ── 6. Create transport manager (needed before orchestrator for getTransport) ─
   const io = getIO();
-  const orchestrator = createOrchestrator(config, aiProvider, io);
-  fastify.log.info('Conversation orchestrator initialized');
+
+  // We need a forward reference: orchestrator needs getTransport, but
+  // transportManager needs orchestrator. Solve with a lazy ref.
+  let transportManager = null;
+
+  const orchestrator = createOrchestrator(config, aiProvider, io, {
+    getTransport: () => transportManager?.getTransport() ?? null,
+    logger: fastify.log,
+  });
+  fastify.log.info('Conversation orchestrator initialized (with delay + presence)');
 
   // ── 7. Initialize WhatsApp transport ─────────────────────────────────────
-  const transportManager = createTransportManager(config, orchestrator, io, fastify.log);
+  transportManager = createTransportManager(config, orchestrator, io, fastify.log);
   await transportManager.initialize();
 
   // ── 8. Register routes ───────────────────────────────────────────────────
-  fastify.register(healthRoutes, { config, aiProvider, transportManager });
-  fastify.register(conversationRoutes, { orchestrator });
+  fastify.register(healthRoutes, { config, aiProvider, transportManager, orchestrator });
+  fastify.register(conversationRoutes, { orchestrator, config, transportManager });
   fastify.register(settingsRoutes, { io });
+  fastify.register(presetRoutes);
 
   // Register webhook routes only for Cloud API mode
   if (config.whatsapp.mode === 'cloud_api') {
@@ -108,6 +118,7 @@ async function main() {
     fastify.log.info(`Received ${signal}, shutting down…`);
     try {
       if (telegramAdmin) await telegramAdmin.shutdown();
+      orchestrator.shutdown();
       await transportManager.shutdown();
       closeSocket();
       await fastify.close();

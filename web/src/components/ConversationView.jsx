@@ -3,7 +3,13 @@ import { useMessages } from '../hooks/useConversations.js';
 import { sendMessage } from '../api/client.js';
 import MessageBubble from './MessageBubble.jsx';
 
-export default function ConversationView({ conversationId, conversation }) {
+const ACTIVITY_DISPLAY = {
+  thinking: '🤔 Bot is thinking…',
+  typing: '⌨️ Bot is typing…',
+  sending: '📤 Bot is sending…',
+};
+
+export default function ConversationView({ conversationId, conversation, botActivity }) {
   const { messages, loading } = useMessages(conversationId);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -12,7 +18,7 @@ export default function ConversationView({ conversationId, conversation }) {
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, botActivity]);
 
   const handleSend = async () => {
     const text = input.trim();
@@ -45,12 +51,21 @@ export default function ConversationView({ conversationId, conversation }) {
     );
   }
 
+  const activityLabel = botActivity && botActivity !== 'idle'
+    ? ACTIVITY_DISPLAY[botActivity]
+    : null;
+
   return (
     <div className="conversation-view">
       <div className="conversation-header">
         <h3>{conversation?.display_name || conversation?.remote_id || 'Chat'}</h3>
         <span className="conversation-header-meta">
-          {conversation?.platform} · {conversation?.auto_reply ? 'Auto-reply ON' : 'Manual'}
+          {conversation?.platform === 'whatsapp_cloud' ? 'Cloud API' :
+           conversation?.platform === 'whatsapp_baileys' ? 'Baileys' :
+           conversation?.platform}
+          {' · '}
+          {conversation?.auto_reply ? 'Auto-reply ON' : 'Manual'}
+          {conversation?.ai_model ? ` · ${conversation.ai_model}` : ''}
         </span>
       </div>
 
@@ -59,6 +74,9 @@ export default function ConversationView({ conversationId, conversation }) {
         {messages.map(m => (
           <MessageBubble key={m.id} message={m} />
         ))}
+        {activityLabel && (
+          <div className="bot-activity-indicator">{activityLabel}</div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 

@@ -46,7 +46,8 @@ export function useMessages(conversationId) {
     setLoading(true);
     try {
       const data = await getMessages(conversationId, 200);
-      setMessages(data.messages || []);
+      // API returns DESC (newest first) — reverse for chronological chat display
+      setMessages((data.messages || []).reverse());
     } catch (err) {
       console.error('Failed to load messages:', err);
     } finally {
@@ -66,5 +67,40 @@ export function useMessages(conversationId) {
     }
   }, [conversationId]));
 
+  // Real-time: delivery status update
+  useSocket('message:status', useCallback(({ conversationId: cid, messageId, status, error }) => {
+    if (cid === conversationId) {
+      setMessages(prev =>
+        prev.map(m => m.id === messageId
+          ? { ...m, delivery_status: status, delivery_error: error }
+          : m
+        )
+      );
+    }
+  }, [conversationId]));
+
+  // Real-time: message updated (e.g. media download completed — media_path, media_mime_type, media_size_bytes populated)
+  useSocket('message:update', useCallback(({ conversationId: cid, message }) => {
+    if (cid === conversationId && message) {
+      setMessages(prev =>
+        prev.map(m => m.id === message.id ? { ...m, ...message } : m)
+      );
+    }
+  }, [conversationId]));
+
   return { messages, loading, refresh: load };
+}
+
+/**
+ * Hook to track bot activity state per conversation.
+ * Listens for 'bot:activity' events: { conversationId, state: 'thinking'|'typing'|'sending'|'idle' }
+ */
+export function useBotActivity() {
+  const [activities, setActivities] = useState({});
+
+  useSocket('bot:activity', useCallback(({ conversationId, state }) => {
+    setActivities(prev => ({ ...prev, [conversationId]: state }));
+  }, []));
+
+  return activities;
 }

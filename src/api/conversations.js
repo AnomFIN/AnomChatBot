@@ -1,24 +1,75 @@
 import {
   listConversations,
   getConversation,
+  createConversation,
+  findConversationByRemote,
 } from '../persistence/conversations.js';
 import { getMessages, getMessageCount } from '../persistence/messages.js';
+import { getDefaultPreset } from '../persistence/presets.js';
 
 /**
  * Conversation API routes.
  *
  * GET  /api/conversations                — List all conversations
+ * POST /api/conversations                — Create a new conversation
  * GET  /api/conversations/:id            — Get single conversation
  * GET  /api/conversations/:id/messages   — Get message history (paginated)
  * POST /api/conversations/:id/messages   — Operator sends a message
  */
 export default async function conversationRoutes(fastify, opts) {
-  const { orchestrator } = opts;
+  const { orchestrator, config } = opts;
 
   // ── List conversations ─────────────────────────────────────────────────
   fastify.get('/api/conversations', async () => {
     const conversations = listConversations();
     return { success: true, data: conversations };
+  });
+
+  // ── Create new conversation ────────────────────────────────────────────
+  fastify.post('/api/conversations', async (request, reply) => {
+    const { phone_number, display_name } = request.body || {};
+
+    if (!phone_number || typeof phone_number !== 'string' || phone_number.trim().length === 0) {
+      reply.code(400);
+      return { success: false, error: 'phone_number is required' };
+    }
+
+    // Normalize: strip spaces, dashes, plus sign prefix
+    const normalized = phone_number.trim().replace(/[\s\-\+]/g, '');
+    if (!/^\d{7,15}$/.test(normalized)) {
+      reply.code(400);
+      return { success: false, error: 'phone_number must be 7-15 digits' };
+    }
+
+    // Determine platform based on current whatsapp mode
+    const platform = config.whatsapp.mode === 'cloud_api' ? 'whatsapp_cloud' : 'whatsapp_baileys';
+
+    // Check if conversation already exists
+    const existing = findConversationByRemote(platform, normalized);
+    if (existing) {
+      return { success: true, data: existing, existed: true };
+    }
+
+    // Get default preset for initial settings
+    const defaultPreset = getDefaultPreset();
+    const defaults = {
+      tone: defaultPreset?.tone ?? config.defaults.tone,
+      flirt: defaultPreset?.flirt ?? config.defaults.flirt,
+      temperature: defaultPreset?.temperature ?? config.defaults.temperature,
+      max_tokens: defaultPreset?.max_tokens ?? config.defaults.maxTokens,
+      max_history: config.defaults.maxHistory,
+      preset_id: defaultPreset?.id ?? null,
+      system_prompt: defaultPreset?.system_prompt ?? '',
+    };
+
+    const conversation = createConversation({
+      platform,
+      remoteId: normalized,
+      displayName: (display_name || '').trim() || normalized,
+      defaults,
+    });
+
+    return { success: true, data: conversation, existed: false };
   });
 
   // ── Get single conversation ────────────────────────────────────────────
@@ -29,6 +80,28 @@ export default async function conversationRoutes(fastify, opts) {
       return { success: false, error: 'Conversation not found' };
     }
     return { success: true, data: conversation };
+  });
+
+  // ── Fetch profile photo ────────────────────────────────────────────────
+  fastify.get('/api/conversations/:id/photo', async (request, reply) => {
+    const { transportManager } = opts;
+    const conversation = getConversation(request.params.id);
+    if (!conversation) {
+      reply.code(404);
+      return { success: false, error: 'Conversation not found' };
+    }
+
+    const transport = transportManager?.getTransport();
+    if (!transport || !conversation.remote_id) {
+      return { success: true, data: { url: null } };
+    }
+
+    try {
+      const url = await transport.fetchProfilePhoto(conversation.remote_id);
+      return { success: true, data: { url } };
+    } catch {
+      return { success: true, data: { url: null } };
+    }
   });
 
   // ── Get messages ───────────────────────────────────────────────────────

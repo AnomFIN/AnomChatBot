@@ -1,14 +1,94 @@
 import { getConversation, updateConversationSettings } from '../persistence/conversations.js';
-import { VALID_TONES, VALID_FLIRTS } from '../config/index.js';
+import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
+import { VALID_TONES, VALID_FLIRTS, redactSecret } from '../config/index.js';
 
 /**
- * Conversation settings API routes.
+ * Settings API routes.
  *
- * GET /api/conversations/:id/settings  — Get conversation settings
- * PUT /api/conversations/:id/settings  — Update conversation settings
+ * GET  /api/conversations/:id/settings  — Get conversation settings
+ * PUT  /api/conversations/:id/settings  — Update conversation settings
+ * GET  /api/settings                    — Get global settings
+ * PUT  /api/settings                    — Update global settings
  */
 export default async function settingsRoutes(fastify, opts) {
   const { io } = opts;
+
+  // ── Get global settings ────────────────────────────────────────────────
+  fastify.get('/api/settings', async () => {
+    const settings = getAllSettings();
+    // Redact any secret values
+    const redacted = { ...settings };
+    if (redacted.ai_api_key) {
+      redacted.ai_api_key = redactSecret(redacted.ai_api_key);
+    }
+    return { success: true, data: redacted };
+  });
+
+  // ── Update global settings ─────────────────────────────────────────────
+  fastify.put('/api/settings', async (request, reply) => {
+    const body = request.body || {};
+    const errors = [];
+
+    // Validate delay settings
+    if (body.reply_delay_min !== undefined) {
+      const val = parseInt(body.reply_delay_min, 10);
+      if (isNaN(val) || val < 3000) {
+        errors.push('reply_delay_min must be >= 3000 ms');
+      }
+    }
+    if (body.reply_delay_max !== undefined) {
+      const val = parseInt(body.reply_delay_max, 10);
+      if (isNaN(val) || val < 3000) {
+        errors.push('reply_delay_max must be >= 3000 ms');
+      }
+    }
+
+    // Validate presence settings
+    if (body.presence_typing_speed !== undefined) {
+      const val = parseInt(body.presence_typing_speed, 10);
+      if (isNaN(val) || val < 1) {
+        errors.push('presence_typing_speed must be a positive integer (chars/sec)');
+      }
+    }
+
+    if (errors.length > 0) {
+      reply.code(400);
+      return { success: false, error: errors.join('; ') };
+    }
+
+    // Allowed global setting keys
+    const allowedKeys = [
+      'reply_delay_min', 'reply_delay_max',
+      'presence_enabled', 'presence_read_delay', 'presence_typing_speed',
+      'presence_min_typing', 'presence_max_typing', 'presence_idle_after_send',
+      'ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key',
+    ];
+
+    const updates = {};
+    for (const key of allowedKeys) {
+      if (body[key] !== undefined) {
+        updates[key] = body[key];
+      }
+    }
+
+    // Prevent saving redacted API keys back to DB
+    if (updates.ai_api_key && updates.ai_api_key.includes('...')) {
+      delete updates.ai_api_key;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return { success: true, data: { message: 'No changes' } };
+    }
+
+    setSettingsBulk(updates);
+
+    const allSettings = getAllSettings();
+    if (allSettings.ai_api_key) {
+      allSettings.ai_api_key = redactSecret(allSettings.ai_api_key);
+    }
+
+    return { success: true, data: allSettings };
+  });
 
   // ── Get settings ───────────────────────────────────────────────────────
   fastify.get('/api/conversations/:id/settings', async (request, reply) => {
@@ -29,6 +109,13 @@ export default async function settingsRoutes(fastify, opts) {
         max_history: conversation.max_history,
         auto_reply: conversation.auto_reply,
         display_name: conversation.display_name,
+        preset_id: conversation.preset_id,
+        ai_provider: conversation.ai_provider,
+        ai_base_url: conversation.ai_base_url,
+        ai_model: conversation.ai_model,
+        reply_delay_min: conversation.reply_delay_min,
+        reply_delay_max: conversation.reply_delay_max,
+        first_message_sent_manually: conversation.first_message_sent_manually,
       },
     };
   });
@@ -102,6 +189,8 @@ export default async function settingsRoutes(fastify, opts) {
     const allowedKeys = [
       'system_prompt', 'tone', 'flirt', 'temperature',
       'max_tokens', 'max_history', 'auto_reply', 'display_name',
+      'preset_id', 'ai_provider', 'ai_base_url', 'ai_model',
+      'reply_delay_min', 'reply_delay_max',
     ];
     const updates = {};
     for (const key of allowedKeys) {

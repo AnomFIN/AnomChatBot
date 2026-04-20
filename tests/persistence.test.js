@@ -57,10 +57,10 @@ describe('Schema & Database', () => {
     expect(tables).toContain('transport_status');
   });
 
-  it('sets schema_version to 1', () => {
+  it('sets schema_version to 2', () => {
     const db = getDatabase();
     const row = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get();
-    expect(row.value).toBe('1');
+    expect(row.value).toBe('2');
   });
 
   it('creates indexes', () => {

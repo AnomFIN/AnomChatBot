@@ -8,7 +8,7 @@ import { getTotalMessageCount } from '../persistence/messages.js';
  * GET /api/health — returns system status.
  */
 export default async function healthRoutes(fastify, opts) {
-  const { config, aiProvider, transportManager } = opts;
+  const { config, aiProvider, transportManager, orchestrator } = opts;
   const startTime = Date.now();
 
   fastify.get('/api/health', async () => {
@@ -34,6 +34,7 @@ export default async function healthRoutes(fastify, opts) {
         },
         ai: aiProvider ? aiProvider.getStatus() : { connected: false, model: null, provider: null },
         whatsapp: transportManager ? transportManager.getStatus() : { mode: config.whatsapp.mode, status: 'idle', details: 'Not initialized' },
+        orchestrator: orchestrator ? orchestrator.getStatus() : { pendingReplies: 0 },
         modes: {
           aiProvider: config.ai.provider,
           whatsappMode: config.whatsapp.mode,

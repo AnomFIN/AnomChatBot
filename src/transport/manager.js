@@ -7,14 +7,21 @@ import { TRANSPORT_STATES } from './base.js';
  * based on config, wires events to orchestrator and Socket.IO, and
  * exposes lifecycle methods for index.js.
  *
+ * The orchestrator now handles AI replies + sending internally via the delay manager.
+ * The transport manager only wires inbound messages and status events.
+ *
  * @param {object} config — Frozen app config
  * @param {object} orchestrator — { handleIncomingMessage, handleOperatorMessage }
  * @param {object|null} io — Socket.IO server instance
  * @param {object} logger — Pino logger
+
  * @returns {{ initialize(): Promise<void>, shutdown(): Promise<void>, getStatus(): object, getTransport(): object|null }}
  */
 export function createTransportManager(config, orchestrator, io, logger) {
   let transport = null;
+
+  // Determine platform string based on config
+  const platformName = config.whatsapp.mode === 'cloud_api' ? 'whatsapp_cloud' : 'whatsapp_baileys';
 
   function log(level, msg, meta) {
     logger[level]({ ...meta }, `[transport-manager] ${msg}`);
@@ -42,26 +49,20 @@ export function createTransportManager(config, orchestrator, io, logger) {
    * Wire transport events to orchestrator and Socket.IO.
    */
   function wireEvents() {
-    // Inbound messages → orchestrator → send AI reply back
-    transport.on('message', async ({ from, displayName, content, mediaInfo }) => {
+    // Inbound messages → orchestrator (orchestrator handles AI + delay + sending internally)
+    transport.on('message', async ({ from, displayName, content, mediaInfo, downloadMedia, messageKey }) => {
       log('info', `Inbound from ${from}: ${content.slice(0, 80)}`);
 
       try {
-        const result = await orchestrator.handleIncomingMessage(
-          'whatsapp',
+        await orchestrator.handleIncomingMessage(
+          platformName,
           from,
           displayName,
           content,
           mediaInfo,
+          downloadMedia,
+          messageKey,
         );
-
-        // If AI generated a reply, send it back via transport
-        if (result.aiReply) {
-          const sendResult = await transport.sendMessage(from, result.aiReply.content);
-          if (!sendResult.success) {
-            log('warn', `Failed to send reply to ${from}: ${sendResult.error}`);
-          }
-        }
       } catch (err) {
         log('error', `Error handling inbound message: ${err.message}`, { err });
       }

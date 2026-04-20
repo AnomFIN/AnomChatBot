@@ -25,7 +25,11 @@ export function createAIProvider(config) {
 
   /**
    * Generate a reply from the AI model.
-   * @param {Array<{role: string, content: string}>} messages
+   * Supports multimodal content: messages may contain content arrays with
+   * text + image_url parts (OpenAI vision format). If the model does not
+   * support vision, falls back to text-only messages automatically.
+   *
+   * @param {Array<{role: string, content: string|Array}>} messages
    * @param {object} options — { model?, temperature?, max_tokens? }
    * @returns {{ content: string, tokenUsage: { prompt: number, completion: number, total: number } }}
    */
@@ -34,16 +38,21 @@ export function createAIProvider(config) {
     const temperature = options.temperature ?? 0.7;
     const maxTokens = options.max_tokens ?? 1000;
 
+    // Check if any message has multimodal content (array format)
+    const hasMultimodal = messages.some(m => Array.isArray(m.content));
+
     let lastErr = null;
 
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        // Use longer timeout for multimodal (image processing takes time)
+        const timeout = hasMultimodal ? 60000 : 30000;
         const response = await client.chat.completions.create({
           model,
           messages,
           temperature,
           max_tokens: maxTokens,
-        });
+        }, { timeout });
 
         const choice = response.choices?.[0];
         const content = choice?.message?.content ?? '';
@@ -63,8 +72,40 @@ export function createAIProvider(config) {
       } catch (err) {
         lastErr = err;
 
+        // If multimodal failed (model doesn't support vision), fall back to text-only
+        if (hasMultimodal && attempt === 0 && !isRateLimitError(err)) {
+          const textOnlyMessages = stripMultimodalContent(messages);
+          try {
+            const fallbackResponse = await client.chat.completions.create({
+              model,
+              messages: textOnlyMessages,
+              temperature,
+              max_tokens: maxTokens,
+            });
+
+            const choice = fallbackResponse.choices?.[0];
+            const content = choice?.message?.content ?? '';
+            const usage = fallbackResponse.usage ?? {};
+
+            connected = true;
+            lastError = null;
+
+            return {
+              content,
+              tokenUsage: {
+                prompt: usage.prompt_tokens ?? 0,
+                completion: usage.completion_tokens ?? 0,
+                total: usage.total_tokens ?? 0,
+              },
+            };
+          } catch (fallbackErr) {
+            lastErr = fallbackErr;
+            // Fall through to normal error handling
+          }
+        }
+
         // Retry on rate limit (429)
-        if (err.status === 429 && attempt < 2) {
+        if (isRateLimitError(err) && attempt < 2) {
           const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
@@ -163,4 +204,33 @@ function classifyError(err) {
   error.type = type;
   error.status = status;
   return error;
+}
+
+/**
+ * Check if an error is a rate limit (429) error.
+ */
+function isRateLimitError(err) {
+  return (err.status ?? err.statusCode) === 429;
+}
+
+/**
+ * Strip multimodal content (image_url parts) from messages.
+ * Converts array-format content back to plain text for non-vision models.
+ */
+function stripMultimodalContent(messages) {
+  return messages.map(msg => {
+    if (!Array.isArray(msg.content)) return msg;
+
+    // Extract text parts, replace image parts with descriptions
+    const textParts = [];
+    for (const part of msg.content) {
+      if (part.type === 'text') {
+        textParts.push(part.text);
+      } else if (part.type === 'image_url') {
+        textParts.push('[Image sent — this model does not support vision]');
+      }
+    }
+
+    return { ...msg, content: textParts.join('\n') };
+  });
 }
