@@ -94,8 +94,12 @@ export function getDelaySettings(conversation = null) {
   const globalMin = getSettingInt('reply_delay_min', 3000);
   const globalMax = getSettingInt('reply_delay_max', 8000);
 
-  let min = conversation?.reply_delay_min ?? globalMin;
-  let max = conversation?.reply_delay_max ?? globalMax;
+  const useGlobalDelay = conversation?.use_global_delay === undefined
+    ? true
+    : conversation.use_global_delay === 1;
+
+  let min = useGlobalDelay ? globalMin : (conversation?.reply_delay_min ?? globalMin);
+  let max = useGlobalDelay ? globalMax : (conversation?.reply_delay_max ?? globalMax);
 
   // Enforce minimum 3 seconds
   if (min < 3000) min = 3000;

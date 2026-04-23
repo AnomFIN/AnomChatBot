@@ -47,7 +47,7 @@ async function main() {
   // ── 3. Initialize database ───────────────────────────────────────────────
   try {
     initDatabase(config);
-    fastify.log.info('Database initialized (schema v2)');
+    fastify.log.info('Database initialized (schema v4)');
   } catch (err) {
     fastify.log.fatal({ err }, 'Failed to initialize database');
     process.exit(1);
@@ -90,7 +90,7 @@ async function main() {
 
   // ── 8. Register routes ───────────────────────────────────────────────────
   fastify.register(healthRoutes, { config, aiProvider, transportManager, orchestrator });
-  fastify.register(conversationRoutes, { orchestrator, config, transportManager });
+  fastify.register(conversationRoutes, { orchestrator, config, transportManager, io });
   fastify.register(settingsRoutes, { io });
   fastify.register(presetRoutes);
 

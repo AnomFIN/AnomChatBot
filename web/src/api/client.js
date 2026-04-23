@@ -36,6 +36,13 @@ export function sendMessage(id, content) {
   }).then(d => d.data);
 }
 
+export function clearConversationHistory(id, payload) {
+  return request(`/conversations/${id}/messages`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+  }).then(d => d.data);
+}
+
 export function getSettings(id) {
   return request(`/conversations/${id}/settings`).then(d => d.data);
 }

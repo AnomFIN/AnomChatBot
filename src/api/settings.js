@@ -116,6 +116,9 @@ export default async function settingsRoutes(fastify, opts) {
         reply_delay_min: conversation.reply_delay_min,
         reply_delay_max: conversation.reply_delay_max,
         first_message_sent_manually: conversation.first_message_sent_manually,
+        use_global_ai: conversation.use_global_ai ?? 1,
+        use_global_delay: conversation.use_global_delay ?? 1,
+        ai_history_mode: conversation.ai_history_mode || 'partial',
       },
     };
   });
@@ -168,9 +171,27 @@ export default async function settingsRoutes(fastify, opts) {
       }
     }
 
+    if (body.use_global_ai !== undefined) {
+      if (body.use_global_ai !== 0 && body.use_global_ai !== 1) {
+        errors.push('use_global_ai must be 0 or 1');
+      }
+    }
+
+    if (body.use_global_delay !== undefined) {
+      if (body.use_global_delay !== 0 && body.use_global_delay !== 1) {
+        errors.push('use_global_delay must be 0 or 1');
+      }
+    }
+
     if (body.system_prompt !== undefined) {
       if (typeof body.system_prompt !== 'string') {
         errors.push('system_prompt must be a string');
+      }
+    }
+
+    if (body.ai_history_mode !== undefined) {
+      if (!['partial', 'full'].includes(body.ai_history_mode)) {
+        errors.push('ai_history_mode must be partial or full');
       }
     }
 
@@ -190,7 +211,8 @@ export default async function settingsRoutes(fastify, opts) {
       'system_prompt', 'tone', 'flirt', 'temperature',
       'max_tokens', 'max_history', 'auto_reply', 'display_name',
       'preset_id', 'ai_provider', 'ai_base_url', 'ai_model',
-      'reply_delay_min', 'reply_delay_max',
+      'reply_delay_min', 'reply_delay_max', 'use_global_ai', 'use_global_delay',
+      'ai_history_mode',
     ];
     const updates = {};
     for (const key of allowedKeys) {

@@ -4,7 +4,15 @@ import {
   updateConversationSettings,
   touchConversation,
 } from '../persistence/conversations.js';
-import { addMessage, getRecentMessages, updateDeliveryStatus, updatePlatformMessageId, updateMessageMedia, addMediaMetadata } from '../persistence/messages.js';
+import {
+  addMessage,
+  getRecentMessages,
+  getAllMessagesChronological,
+  updateDeliveryStatus,
+  updatePlatformMessageId,
+  updateMessageMedia,
+  addMediaMetadata,
+} from '../persistence/messages.js';
 import { getSettingsBulk } from '../persistence/settings.js';
 import { buildMessages } from './promptBuilder.js';
 import { createDelayManager } from './delayManager.js';
@@ -61,7 +69,11 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
    * dedicated provider instance. Otherwise, use the global default.
    */
   function getAIProvider(conversation) {
-    if (!conversation.ai_provider || !conversation.ai_model) {
+    const useGlobalAI = conversation?.use_global_ai === undefined
+      ? true
+      : conversation.use_global_ai === 1;
+
+    if (useGlobalAI || !conversation.ai_provider || !conversation.ai_model) {
       // Check global settings table for runtime AI overrides (set via GUI)
       return _getGlobalAIProvider() ?? aiProvider;
     }
@@ -151,10 +163,13 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     emit('bot:activity', { conversationId, state: 'thinking' });
 
     // Build prompt with ALL recent messages (including any that arrived during delay)
-    const recentMessages = getRecentMessages(
-      conversationId,
-      conversation.max_history ?? config.defaults.maxHistory,
-    );
+    const historyMode = conversation.ai_history_mode || 'partial';
+    const recentMessages = historyMode === 'full'
+      ? getAllMessagesChronological(conversationId)
+      : getRecentMessages(
+          conversationId,
+          conversation.max_history ?? config.defaults.maxHistory,
+        );
 
     const messages = buildMessages(conversation, recentMessages, config);
 

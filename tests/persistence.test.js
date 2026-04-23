@@ -57,10 +57,10 @@ describe('Schema & Database', () => {
     expect(tables).toContain('transport_status');
   });
 
-  it('sets schema_version to 2', () => {
+  it('sets schema_version to 4', () => {
     const db = getDatabase();
     const row = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get();
-    expect(row.value).toBe('2');
+    expect(row.value).toBe('4');
   });
 
   it('creates indexes', () => {
@@ -111,6 +111,9 @@ describe('Conversations CRUD', () => {
     expect(conv.max_tokens).toBe(1000);
     expect(conv.max_history).toBe(50);
     expect(conv.auto_reply).toBe(0);
+    expect(conv.use_global_ai).toBe(1);
+    expect(conv.use_global_delay).toBe(1);
+    expect(conv.ai_history_mode).toBe('partial');
   });
 
   it('creates a conversation with custom defaults', () => {
@@ -176,9 +179,18 @@ describe('Conversations CRUD', () => {
 
   it('updateConversationSettings updates provided fields only', () => {
     const conv = createConversation({ platform: 'api', remoteId: 'upd-1' });
-    const updated = updateConversationSettings(conv.id, { tone: 'playful', flirt: 'high' });
+    const updated = updateConversationSettings(conv.id, {
+      tone: 'playful',
+      flirt: 'high',
+      use_global_ai: 0,
+      use_global_delay: 0,
+      ai_history_mode: 'full',
+    });
     expect(updated.tone).toBe('playful');
     expect(updated.flirt).toBe('high');
+    expect(updated.use_global_ai).toBe(0);
+    expect(updated.use_global_delay).toBe(0);
+    expect(updated.ai_history_mode).toBe('full');
     expect(updated.temperature).toBe(0.7); // unchanged
   });
 

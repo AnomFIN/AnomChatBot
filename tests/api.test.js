@@ -362,6 +362,54 @@ describe('PUT /api/conversations/:id/settings', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('rejects invalid use_global_ai value', async () => {
+    const conv = createConversation({ platform: 'api', remoteId: 'set-6b' });
+    const res = await fastify.inject({
+      method: 'PUT',
+      url: `/api/conversations/${conv.id}/settings`,
+      payload: { use_global_ai: 2 },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('updates use_global_ai and use_global_delay', async () => {
+    const conv = createConversation({ platform: 'api', remoteId: 'set-6c' });
+    const res = await fastify.inject({
+      method: 'PUT',
+      url: `/api/conversations/${conv.id}/settings`,
+      payload: { use_global_ai: 0, use_global_delay: 0 },
+    });
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.use_global_ai).toBe(0);
+    expect(body.data.use_global_delay).toBe(0);
+  });
+
+  it('updates ai_history_mode', async () => {
+    const conv = createConversation({ platform: 'api', remoteId: 'set-6d' });
+    const res = await fastify.inject({
+      method: 'PUT',
+      url: `/api/conversations/${conv.id}/settings`,
+      payload: { ai_history_mode: 'full' },
+    });
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.ai_history_mode).toBe('full');
+  });
+
+  it('rejects invalid ai_history_mode', async () => {
+    const conv = createConversation({ platform: 'api', remoteId: 'set-6e' });
+    const res = await fastify.inject({
+      method: 'PUT',
+      url: `/api/conversations/${conv.id}/settings`,
+      payload: { ai_history_mode: 'everything' },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
   it('returns no changes when empty payload', async () => {
     const conv = createConversation({ platform: 'api', remoteId: 'set-7' });
     const res = await fastify.inject({
@@ -383,5 +431,65 @@ describe('PUT /api/conversations/:id/settings', () => {
     });
 
     expect(mockIO.emit).toHaveBeenCalledWith('conversation:update', expect.any(Object));
+  });
+});
+
+describe('DELETE /api/conversations/:id/messages', () => {
+  beforeEach(buildApp);
+  afterEach(teardownApp);
+
+  it('returns 404 for nonexistent conversation', async () => {
+    const res = await fastify.inject({
+      method: 'DELETE',
+      url: '/api/conversations/fake/messages',
+      payload: { mode: 'all' },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('deletes all history when mode=all', async () => {
+    const conv = createConversation({ platform: 'api', remoteId: 'del-1' });
+    addMessage(conv.id, 'user', 'one');
+    addMessage(conv.id, 'assistant', 'two');
+
+    const res = await fastify.inject({
+      method: 'DELETE',
+      url: `/api/conversations/${conv.id}/messages`,
+      payload: { mode: 'all' },
+    });
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.deleted_count).toBe(2);
+    expect(body.data.remaining_count).toBe(0);
+  });
+
+  it('deletes partially when mode=partial', async () => {
+    const conv = createConversation({ platform: 'api', remoteId: 'del-2' });
+    addMessage(conv.id, 'user', '1');
+    addMessage(conv.id, 'assistant', '2');
+    addMessage(conv.id, 'user', '3');
+    addMessage(conv.id, 'assistant', '4');
+
+    const res = await fastify.inject({
+      method: 'DELETE',
+      url: `/api/conversations/${conv.id}/messages`,
+      payload: { mode: 'partial', keep_last: 2 },
+    });
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.deleted_count).toBe(2);
+    expect(body.data.remaining_count).toBe(2);
+  });
+
+  it('rejects invalid partial payload', async () => {
+    const conv = createConversation({ platform: 'api', remoteId: 'del-3' });
+    const res = await fastify.inject({
+      method: 'DELETE',
+      url: `/api/conversations/${conv.id}/messages`,
+      payload: { mode: 'partial', keep_last: -1 },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getSettings, updateSettings, getPresets } from '../api/client.js';
+import { getSettings, updateSettings, getPresets, clearConversationHistory } from '../api/client.js';
 
 const TONES = ['professional', 'friendly', 'casual', 'playful'];
 const FLIRTS = ['none', 'subtle', 'moderate', 'high'];
@@ -10,18 +10,15 @@ export default function SettingsPanel({ conversationId, onClose }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
-  const [showAI, setShowAI] = useState(false);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyKeepLast, setHistoryKeepLast] = useState(20);
 
   useEffect(() => {
     if (!conversationId) return;
     setError(null);
     setSaved(false);
-    setShowAI(false);
     getSettings(conversationId)
-      .then(data => {
-        setSettings(data);
-        setShowAI(!!(data.ai_provider || data.ai_base_url || data.ai_model));
-      })
+      .then(data => setSettings(data))
       .catch(err => setError(err.message));
     getPresets()
       .then(setPresets)
@@ -60,8 +57,8 @@ export default function SettingsPanel({ conversationId, onClose }) {
       ai_provider: null,
       ai_base_url: null,
       ai_model: null,
+      use_global_ai: 1,
     }));
-    setShowAI(false);
     setSaved(false);
   };
 
@@ -75,6 +72,37 @@ export default function SettingsPanel({ conversationId, onClose }) {
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleClearAllHistory = async () => {
+    if (!window.confirm('Delete ALL messages in this chat history? This cannot be undone.')) {
+      return;
+    }
+
+    setHistoryBusy(true);
+    setError(null);
+    try {
+      await clearConversationHistory(conversationId, { mode: 'all' });
+      setSaved(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const handleClearPartialHistory = async () => {
+    const keep = Math.max(0, parseInt(historyKeepLast, 10) || 0);
+    setHistoryBusy(true);
+    setError(null);
+    try {
+      await clearConversationHistory(conversationId, { mode: 'partial', keep_last: keep });
+      setSaved(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setHistoryBusy(false);
     }
   };
 
@@ -94,6 +122,15 @@ export default function SettingsPanel({ conversationId, onClose }) {
         <div className="settings-loading">Loading…</div>
       ) : (
         <div className="settings-form">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={(settings.use_global_ai ?? 1) === 1}
+              onChange={e => handleChange('use_global_ai', e.target.checked ? 1 : 0)}
+            />
+            Use global AI settings
+          </label>
+
           {/* Preset selector */}
           <label>
             Preset / Persona
@@ -179,6 +216,19 @@ export default function SettingsPanel({ conversationId, onClose }) {
               value={settings.max_history ?? 50}
               onChange={e => handleChange('max_history', parseInt(e.target.value) || 50)}
             />
+            <span className="field-hint">Used when AI history mode is Partial.</span>
+          </label>
+
+          <label>
+            AI History Mode
+            <select
+              value={settings.ai_history_mode || 'partial'}
+              onChange={e => handleChange('ai_history_mode', e.target.value)}
+            >
+              <option value="partial">Partial (last N messages)</option>
+              <option value="full">Full (entire chat history)</option>
+            </select>
+            <span className="field-hint">Controls how much chat data is sent to AI together with this system prompt.</span>
           </label>
 
           <label className="toggle-label">
@@ -190,41 +240,49 @@ export default function SettingsPanel({ conversationId, onClose }) {
             Auto-reply enabled
           </label>
 
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={(settings.use_global_delay ?? 1) === 1}
+              onChange={e => handleChange('use_global_delay', e.target.checked ? 1 : 0)}
+            />
+            Use global reply delay
+          </label>
+
           {/* Reply delay overrides */}
-          <div className="settings-section-title">Reply Delay</div>
+          {(settings.use_global_delay ?? 1) !== 1 && (
+            <>
+              <div className="settings-section-title">Reply Delay Override</div>
 
-          <label>
-            Min Delay (ms)
-            <input
-              type="number"
-              min="3000"
-              value={settings.reply_delay_min ?? ''}
-              placeholder="Use global default"
-              onChange={e => handleChange('reply_delay_min', e.target.value ? parseInt(e.target.value) : null)}
-            />
-          </label>
+              <label>
+                Min Delay (ms)
+                <input
+                  type="number"
+                  min="3000"
+                  value={settings.reply_delay_min ?? ''}
+                  placeholder="Use global default"
+                  onChange={e => handleChange('reply_delay_min', e.target.value ? parseInt(e.target.value) : null)}
+                />
+              </label>
 
-          <label>
-            Max Delay (ms)
-            <input
-              type="number"
-              min="3000"
-              value={settings.reply_delay_max ?? ''}
-              placeholder="Use global default"
-              onChange={e => handleChange('reply_delay_max', e.target.value ? parseInt(e.target.value) : null)}
-            />
-          </label>
+              <label>
+                Max Delay (ms)
+                <input
+                  type="number"
+                  min="3000"
+                  value={settings.reply_delay_max ?? ''}
+                  placeholder="Use global default"
+                  onChange={e => handleChange('reply_delay_max', e.target.value ? parseInt(e.target.value) : null)}
+                />
+              </label>
+            </>
+          )}
 
           {/* Per-conversation AI override */}
-          <div className="settings-section-title">
-            AI Provider Override
-            {!showAI && (
-              <button className="btn-ghost btn-sm" onClick={() => setShowAI(true)}>Configure</button>
-            )}
-          </div>
-
-          {showAI && (
+          {(settings.use_global_ai ?? 1) !== 1 && (
             <>
+              <div className="settings-section-title">Local AI Override</div>
+
               <span className="field-hint">
                 Override the global AI provider for this conversation.
                 Leave empty to use the global provider. Useful for LM Studio / Ollama testing.
@@ -268,6 +326,36 @@ export default function SettingsPanel({ conversationId, onClose }) {
               </button>
             </>
           )}
+
+          <div className="settings-section-title">Chat History Cleanup</div>
+
+          <label>
+            Keep latest N messages
+            <input
+              type="number"
+              min="0"
+              max="10000"
+              value={historyKeepLast}
+              onChange={e => setHistoryKeepLast(parseInt(e.target.value, 10) || 0)}
+            />
+          </label>
+
+          <div className="history-actions">
+            <button
+              className="btn-ghost btn-sm"
+              onClick={handleClearPartialHistory}
+              disabled={historyBusy}
+            >
+              {historyBusy ? 'Working…' : 'Delete older, keep latest'}
+            </button>
+            <button
+              className="btn-ghost btn-sm btn-danger"
+              onClick={handleClearAllHistory}
+              disabled={historyBusy}
+            >
+              {historyBusy ? 'Working…' : 'Delete all history'}
+            </button>
+          </div>
 
           <button className="save-btn" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save Settings'}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SocketProvider } from './context/SocketContext.jsx';
 import { useConversations, useBotActivity } from './hooks/useConversations.js';
 import { useStatus } from './hooks/useStatus.js';
@@ -20,8 +20,33 @@ function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'presets' | 'global' | 'qr' | 'logs'
+  const [showSidebar, setShowSidebar] = useState(() => {
+    const saved = localStorage.getItem('anomchatbot-sidebar-visible');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
 
   const selectedConversation = conversations.find(c => c.id === selectedId) || null;
+
+  useEffect(() => {
+    localStorage.setItem('anomchatbot-sidebar-visible', JSON.stringify(showSidebar));
+  }, [showSidebar]);
+
+  useEffect(() => {
+    const handleKeyboard = (event) => {
+      // Toggle sidebar with Ctrl+\ or Cmd+\
+      if ((event.ctrlKey || event.metaKey) && event.key === '\\') {
+        event.preventDefault();
+        toggleSidebar();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyboard);
+    return () => document.removeEventListener('keydown', handleKeyboard);
+  }, []);
+
+  const toggleSidebar = () => {
+    setShowSidebar(prev => !prev);
+  };
 
   const handleNewConversationCreated = (conversation, existed) => {
     setShowNewConversation(false);
@@ -53,15 +78,24 @@ function Dashboard() {
 
       <div className="app-body">
         {activeTab === 'chat' && (
-          <div className="chat-layout">
-            <ConversationList
-              conversations={conversations}
-              selectedId={selectedId}
-              onSelect={(id) => { setSelectedId(id); setShowSettings(false); }}
-              botActivities={botActivities}
-              onNewConversation={() => setShowNewConversation(true)}
-            />
+          <div className={`chat-layout ${!showSidebar ? 'sidebar-hidden' : ''}`}>
+            {showSidebar && (
+              <ConversationList
+                conversations={conversations}
+                selectedId={selectedId}
+                onSelect={(id) => { setSelectedId(id); setShowSettings(false); }}
+                botActivities={botActivities}
+                onNewConversation={() => setShowNewConversation(true)}
+              />
+            )}
             <div className="chat-main">
+              <button
+                className="sidebar-toggle"
+                onClick={toggleSidebar}
+                title={showSidebar ? 'Hide sidebar (Ctrl+\\)' : 'Show sidebar (Ctrl+\\)'}
+              >
+                {showSidebar ? '‹' : '›'}
+              </button>
               <ConversationView
                 conversationId={selectedId}
                 conversation={selectedConversation}

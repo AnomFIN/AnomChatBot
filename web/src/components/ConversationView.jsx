@@ -65,6 +65,10 @@ export default function ConversationView({ conversationId, conversation, botActi
            conversation?.platform}
           {' · '}
           {conversation?.auto_reply ? 'Auto-reply ON' : 'Manual'}
+          {' · '}
+          {(conversation?.use_global_ai ?? 1) === 1 ? 'AI: Global' : 'AI: Local'}
+          {' · '}
+          {(conversation?.use_global_delay ?? 1) === 1 ? 'Delay: Global' : 'Delay: Local'}
           {conversation?.ai_model ? ` · ${conversation.ai_model}` : ''}
         </span>
       </div>

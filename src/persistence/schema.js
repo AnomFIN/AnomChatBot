@@ -17,10 +17,20 @@ export function runMigrations(db) {
     runV2(db);
   }
 
+  // ── v3: per-conversation toggle flags (AI source + delay source) ─────
+  if (schemaVersion < 3) {
+    runV3(db);
+  }
+
+  // ── v4: per-conversation AI history mode (partial/full) ──────────────
+  if (schemaVersion < 4) {
+    runV4(db);
+  }
+
   // ── update schema version ──────────────────────────────────────────────
   db.prepare(`
     INSERT OR REPLACE INTO _meta (key, value, updated_at)
-    VALUES ('schema_version', '2', datetime('now'))
+    VALUES ('schema_version', '4', datetime('now'))
   `).run();
 }
 
@@ -192,6 +202,27 @@ function runV2(db) {
   const settingCount = db.prepare('SELECT COUNT(*) as count FROM settings').get().count;
   if (settingCount === 0) {
     seedSettings(db);
+  }
+}
+
+function runV3(db) {
+  function addColumn(table, column, definition) {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    } catch {
+      // Column already exists — ignore
+    }
+  }
+
+  addColumn('conversations', 'use_global_ai', 'INTEGER NOT NULL DEFAULT 1');
+  addColumn('conversations', 'use_global_delay', 'INTEGER NOT NULL DEFAULT 1');
+}
+
+function runV4(db) {
+  try {
+    db.exec("ALTER TABLE conversations ADD COLUMN ai_history_mode TEXT NOT NULL DEFAULT 'partial'");
+  } catch {
+    // Column already exists — ignore
   }
 }
 

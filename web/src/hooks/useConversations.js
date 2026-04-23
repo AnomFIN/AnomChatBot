@@ -88,6 +88,13 @@ export function useMessages(conversationId) {
     }
   }, [conversationId]));
 
+  // Real-time: history cleared or trimmed for this conversation
+  useSocket('conversation:history_cleared', useCallback(({ conversationId: cid }) => {
+    if (cid === conversationId) {
+      load();
+    }
+  }, [conversationId, load]));
+
   return { messages, loading, refresh: load };
 }
 

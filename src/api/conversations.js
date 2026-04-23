@@ -3,8 +3,14 @@ import {
   getConversation,
   createConversation,
   findConversationByRemote,
+  refreshConversationActivityFromMessages,
 } from '../persistence/conversations.js';
-import { getMessages, getMessageCount } from '../persistence/messages.js';
+import {
+  getMessages,
+  getMessageCount,
+  deleteAllMessages,
+  deleteMessagesKeepLatest,
+} from '../persistence/messages.js';
 import { getDefaultPreset } from '../persistence/presets.js';
 
 /**
@@ -17,7 +23,7 @@ import { getDefaultPreset } from '../persistence/presets.js';
  * POST /api/conversations/:id/messages   — Operator sends a message
  */
 export default async function conversationRoutes(fastify, opts) {
-  const { orchestrator, config } = opts;
+  const { orchestrator, config, io } = opts;
 
   // ── List conversations ─────────────────────────────────────────────────
   fastify.get('/api/conversations', async () => {
@@ -153,5 +159,56 @@ export default async function conversationRoutes(fastify, opts) {
       }
       throw err;
     }
+  });
+
+  // ── Delete message history (full or partial) ─────────────────────────
+  fastify.delete('/api/conversations/:id/messages', async (request, reply) => {
+    const conversation = getConversation(request.params.id);
+    if (!conversation) {
+      reply.code(404);
+      return { success: false, error: 'Conversation not found' };
+    }
+
+    const { mode = 'all', keep_last } = request.body || {};
+
+    if (!['all', 'partial'].includes(mode)) {
+      reply.code(400);
+      return { success: false, error: 'mode must be all or partial' };
+    }
+
+    if (mode === 'partial') {
+      const keep = parseInt(keep_last, 10);
+      if (!Number.isInteger(keep) || keep < 0) {
+        reply.code(400);
+        return { success: false, error: 'keep_last must be an integer >= 0 when mode=partial' };
+      }
+    }
+
+    const deletedCount = mode === 'all'
+      ? deleteAllMessages(conversation.id)
+      : deleteMessagesKeepLatest(conversation.id, keep_last);
+
+    const updatedConversation = refreshConversationActivityFromMessages(conversation.id);
+    const remaining = getMessageCount(conversation.id);
+
+    if (io) {
+      io.emit('conversation:update', { conversation: updatedConversation });
+      io.emit('conversation:history_cleared', {
+        conversationId: conversation.id,
+        mode,
+        deletedCount,
+        remaining,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        conversation_id: conversation.id,
+        mode,
+        deleted_count: deletedCount,
+        remaining_count: remaining,
+      },
+    };
   });
 }

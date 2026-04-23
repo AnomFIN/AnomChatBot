@@ -92,7 +92,7 @@ export function updateConversationSettings(id, settings) {
     'max_tokens', 'max_history', 'auto_reply', 'display_name',
     'preset_id', 'ai_provider', 'ai_base_url', 'ai_model',
     'profile_photo_url', 'reply_delay_min', 'reply_delay_max',
-    'first_message_sent_manually',
+    'first_message_sent_manually', 'use_global_ai', 'use_global_delay', 'ai_history_mode',
   ];
 
   const updates = [];
@@ -131,4 +131,23 @@ export function touchConversation(id) {
 export function getConversationCount() {
   const db = getDatabase();
   return db.prepare('SELECT COUNT(*) as count FROM conversations').get().count;
+}
+
+/**
+ * Refresh conversation activity timestamps from current message history.
+ * last_message_at becomes latest message timestamp or null if no messages remain.
+ */
+export function refreshConversationActivityFromMessages(id) {
+  const db = getDatabase();
+  db.prepare(`
+    UPDATE conversations
+    SET
+      updated_at = datetime('now'),
+      last_message_at = (
+        SELECT MAX(created_at) FROM messages WHERE conversation_id = ?
+      )
+    WHERE id = ?
+  `).run(id, id);
+
+  return getConversation(id);
 }

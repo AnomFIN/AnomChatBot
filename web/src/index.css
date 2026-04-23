@@ -92,6 +92,40 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .chat-layout {
   display: flex;
   height: 100%;
+  transition: all 0.2s ease;
+}
+
+.chat-layout.sidebar-hidden .conversation-list {
+  width: 0;
+  min-width: 0;
+  border-right: none;
+  overflow: hidden;
+}
+
+/* ── Sidebar Toggle ───────────────────────────────────────────────────── */
+.sidebar-toggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 32px;
+  height: 28px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 16px;
+  font-weight: bold;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.sidebar-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--bg-secondary);
 }
 
 /* ── Conversation List ────────────────────────────────────────────────── */
@@ -564,6 +598,39 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .conversation-item-content { flex: 1; min-width: 0; }
 
 /* ── Search Row ───────────────────────────────────────────────────────── */
+
+/* ── Responsive Design ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .conversation-list {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 280px;
+    z-index: 20;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
+  }
+  
+  .chat-layout.sidebar-hidden .conversation-list {
+    transform: translateX(-100%);
+  }
+  
+  .sidebar-toggle {
+    z-index: 25;
+  }
+  
+  /* Mobile sidebar overlay */
+  .chat-layout:not(.sidebar-hidden)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 15;
+  }
+}
 .search-row {
   display: flex;
   gap: 6px;
@@ -791,6 +858,12 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 
 .status-pending { color: var(--yellow); }
 .status-activity { color: var(--accent); font-size: 11px; }
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
 
 /* ── Media in Messages ─────────────────────────────────────────────────── */
 

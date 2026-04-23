@@ -84,6 +84,17 @@ export function getRecentMessages(conversationId, limit = 50) {
 }
 
 /**
+ * Get all messages for a conversation in chronological order.
+ * Used when AI history mode is set to full.
+ */
+export function getAllMessagesChronological(conversationId) {
+  const db = getDatabase();
+  return db.prepare(
+    'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC'
+  ).all(conversationId);
+}
+
+/**
  * Get message count for a conversation.
  */
 export function getMessageCount(conversationId) {
@@ -158,4 +169,67 @@ export function addMediaMetadata(messageId, metadata) {
 export function getMediaMetadata(messageId) {
   const db = getDatabase();
   return db.prepare('SELECT * FROM media_metadata WHERE message_id = ?').get(messageId) ?? null;
+}
+
+/**
+ * Delete all messages for a conversation, including related media metadata.
+ * Returns number of deleted messages.
+ */
+export function deleteAllMessages(conversationId) {
+  const db = getDatabase();
+  const run = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM media_metadata
+      WHERE message_id IN (
+        SELECT id FROM messages WHERE conversation_id = ?
+      )
+    `).run(conversationId);
+
+    const result = db.prepare(
+      'DELETE FROM messages WHERE conversation_id = ?'
+    ).run(conversationId);
+
+    return result.changes;
+  });
+
+  return run();
+}
+
+/**
+ * Delete oldest messages while keeping the newest N messages.
+ * Returns number of deleted messages.
+ */
+export function deleteMessagesKeepLatest(conversationId, keepLatest) {
+  const db = getDatabase();
+  const keep = Math.max(0, parseInt(keepLatest, 10) || 0);
+  const total = getMessageCount(conversationId);
+  const toDelete = Math.max(0, total - keep);
+
+  if (toDelete === 0) return 0;
+
+  const run = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM media_metadata
+      WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE conversation_id = ?
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+      )
+    `).run(conversationId, toDelete);
+
+    const result = db.prepare(`
+      DELETE FROM messages
+      WHERE id IN (
+        SELECT id FROM messages
+        WHERE conversation_id = ?
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+      )
+    `).run(conversationId, toDelete);
+
+    return result.changes;
+  });
+
+  return run();
 }

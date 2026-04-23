@@ -165,7 +165,7 @@ describe('Config — defaults', () => {
     expect(result.valid).toBe(true);
     const { config } = result;
     expect(config.port).toBe(3001);
-    expect(config.host).toBe('0.0.0.0');
+    expect(config.host).toBe('127.0.0.1');
     expect(config.logLevel).toBe('info');
     expect(config.ai.provider).toBe('openai');
     expect(config.ai.openaiModel).toBe('gpt-4o-mini');
