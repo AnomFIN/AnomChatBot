@@ -93,6 +93,7 @@ export function updateConversationSettings(id, settings) {
     'preset_id', 'ai_provider', 'ai_base_url', 'ai_model',
     'profile_photo_url', 'reply_delay_min', 'reply_delay_max',
     'first_message_sent_manually', 'use_global_ai', 'use_global_delay', 'ai_history_mode',
+    'ai_approach_enabled', 'ai_approach_max_messages', 'ai_approach_delay_minutes',
   ];
 
   const updates = [];

@@ -17,6 +17,7 @@ import { getSettingsBulk } from '../persistence/settings.js';
 import { buildMessages } from './promptBuilder.js';
 import { createDelayManager } from './delayManager.js';
 import { createPresenceManager } from './presenceManager.js';
+import { createApproachManager } from './approachManager.js';
 import { createAIProvider } from '../ai/provider.js';
 import { downloadAndStore } from '../media/storage.js';
 
@@ -54,6 +55,14 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     logger,
     onReady: async (conversationId, version) => {
       await _processDelayedReply(conversationId, version);
+    },
+  });
+
+  // ── Approach manager ─────────────────────────────────────────────────
+  const approachManager = createApproachManager({
+    logger,
+    onApproach: async (conversationId, approachInfo) => {
+      await _processApproachMessage(conversationId, approachInfo);
     },
   });
 
@@ -138,6 +147,79 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       log('warn', `Failed to create global AI override provider: ${err.message}`);
       return null;
     }
+  }
+
+  /**
+   * Process an AI approach message when user hasn't replied for a while.
+   * Similar to delayed reply but specifically for proactive follow-ups.
+   */
+  async function _processApproachMessage(conversationId, approachInfo) {
+    const conversation = getConversation(conversationId);
+    if (!conversation) {
+      log('warn', `Conversation ${conversationId} not found for approach message`);
+      approachManager.stopTracking(conversationId, 'conversation_not_found');
+      return;
+    }
+
+    // Check if approach is still enabled (settings might have changed)
+    if (!conversation.ai_approach_enabled) {
+      log('info', `Approach disabled for ${conversationId}, stopping`);
+      approachManager.stopTracking(conversationId, 'approach_disabled');
+      return;
+    }
+
+    // If there's a pending regular reply, don't send approach message
+    if (delayManager.hasPending(conversationId)) {
+      log('info', `Skipping approach for ${conversationId} - regular reply pending`);
+      return;
+    }
+
+    // Emit bot activity: thinking about approach
+    emit('bot:activity', { conversationId, state: 'thinking' });
+
+    // Build prompt with context that this is a follow-up approach
+    const historyMode = conversation.ai_history_mode || 'partial';
+    const recentMessages = historyMode === 'full'
+      ? getAllMessagesChronological(conversationId)
+      : getRecentMessages(
+          conversationId,
+          conversation.max_history ?? config.defaults.maxHistory,
+        );
+
+    const messages = buildMessages(conversation, recentMessages, config, {
+      isApproachMessage: true,
+      approachNumber: approachInfo.messageNumber,
+      maxApproaches: approachInfo.maxMessages,
+    });
+
+    let aiReply;
+    try {
+      const provider = getAIProvider(conversation);
+      aiReply = await provider.generateReply(messages, {
+        temperature: conversation.temperature,
+        max_tokens: conversation.max_tokens,
+      });
+    } catch (err) {
+      log('error', `AI error for approach message ${conversationId}: ${err.message}`);
+      approachManager.stopTracking(conversationId, 'ai_error');
+      emit('bot:activity', { conversationId, state: 'idle' });
+      return;
+    }
+
+    // Persist approach message
+    const approachMessage = addMessage(conversationId, 'assistant', aiReply.content, {
+      token_count: aiReply.tokenUsage?.total ?? null,
+      direction: 'outbound',
+      delivery_status: 'queued',
+    });
+
+    emit('message:new', { conversationId, message: approachMessage });
+
+    // Send via transport with presence simulation
+    await _sendWithPresence(conversation, approachMessage, aiReply.content);
+
+    touchConversation(conversationId);
+    log('info', `Sent approach message ${approachInfo.messageNumber}/${approachInfo.maxMessages} for ${conversationId}`);
   }
 
   /**
@@ -380,7 +462,12 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       };
     }
 
-    // 5. Schedule delayed reply (resets timer if already pending — multi-message batching)
+    // 5. Start tracking for potential AI approach (resets any existing tracking)
+    if (conversation.ai_approach_enabled) {
+      approachManager.trackUserMessage(conversation.id, conversation);
+    }
+
+    // 6. Schedule delayed reply (resets timer if already pending — multi-message batching)
     delayManager.scheduleReply(conversation.id, conversation);
 
     return {
@@ -412,6 +499,12 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       delayManager.cancel(conversationId);
       emit('bot:activity', { conversationId, state: 'idle' });
       log('info', `Cancelled pending AI reply for ${conversationId} — operator message`);
+    }
+
+    // Cancel any pending approach — operator is engaging
+    if (approachManager.isTracking(conversationId)) {
+      approachManager.cancel(conversationId, 'operator_message');
+      log('info', `Cancelled AI approach for ${conversationId} — operator message`);
     }
 
     // Persist operator message as 'assistant' (operator IS the bot persona)
@@ -485,6 +578,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
   function getStatus() {
     return {
       pendingReplies: delayManager.getPendingCount(),
+      activeApproaches: approachManager.getActiveCount(),
     };
   }
 
@@ -494,6 +588,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
   function shutdown() {
     delayManager.shutdown();
     presenceManager.shutdown();
+    approachManager.shutdown();
   }
 
   return {
@@ -504,5 +599,6 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     // Expose for testing
     _delayManager: delayManager,
     _presenceManager: presenceManager,
+    _approachManager: approachManager,
   };
 }

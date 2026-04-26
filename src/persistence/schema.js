@@ -27,10 +27,15 @@ export function runMigrations(db) {
     runV4(db);
   }
 
+  // ── v5: AI approach/follow-up feature ────────────────────────────────
+  if (schemaVersion < 5) {
+    runV5(db);
+  }
+
   // ── update schema version ──────────────────────────────────────────────
   db.prepare(`
     INSERT OR REPLACE INTO _meta (key, value, updated_at)
-    VALUES ('schema_version', '4', datetime('now'))
+    VALUES ('schema_version', '5', datetime('now'))
   `).run();
 }
 
@@ -224,6 +229,21 @@ function runV4(db) {
   } catch {
     // Column already exists — ignore
   }
+}
+
+function runV5(db) {
+  function addColumn(table, column, definition) {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    } catch {
+      // Column already exists — ignore
+    }
+  }
+
+  // AI approach/follow-up feature
+  addColumn('conversations', 'ai_approach_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('conversations', 'ai_approach_max_messages', 'INTEGER NOT NULL DEFAULT 3');
+  addColumn('conversations', 'ai_approach_delay_minutes', 'INTEGER NOT NULL DEFAULT 10');
 }
 
 function seedPresets(db) {

@@ -243,6 +243,52 @@ export default function SettingsPanel({ conversationId, onClose }) {
           <label className="toggle-label">
             <input
               type="checkbox"
+              checked={settings.ai_approach_enabled === 1}
+              onChange={e => handleChange('ai_approach_enabled', e.target.checked ? 1 : 0)}
+            />
+            Allow AI to approach (follow-up when user is quiet)
+          </label>
+
+          {/* AI approach parameters (only show when enabled) */}
+          {settings.ai_approach_enabled === 1 && (
+            <>
+              <div className="settings-section-title">AI Approach Settings</div>
+
+              <label>
+                Max follow-up messages
+                <select
+                  value={settings.ai_approach_max_messages ?? 3}
+                  onChange={e => handleChange('ai_approach_max_messages', parseInt(e.target.value))}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                    <option key={num} value={num}>{num} message{num !== 1 ? 's' : ''}</option>
+                  ))}
+                </select>
+                <span className="field-hint">How many follow-up messages AI can send when user doesn't reply</span>
+              </label>
+
+              <label>
+                Delay between approaches (minutes)
+                <select
+                  value={settings.ai_approach_delay_minutes ?? 10}
+                  onChange={e => handleChange('ai_approach_delay_minutes', parseInt(e.target.value))}
+                >
+                  {[5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440].map(minutes => (
+                    <option key={minutes} value={minutes}>
+                      {minutes < 60 ? `${minutes} min` : 
+                       minutes < 1440 ? `${Math.floor(minutes/60)}h ${minutes%60 > 0 ? `${minutes%60}m` : ''}`.trim() :
+                       `${Math.floor(minutes/1440)} day${Math.floor(minutes/1440) !== 1 ? 's' : ''}`}
+                    </option>
+                  ))}
+                </select>
+                <span className="field-hint">Time to wait before sending next follow-up message</span>
+              </label>
+            </>
+          )}
+
+          <label className="toggle-label">
+            <input
+              type="checkbox"
               checked={(settings.use_global_delay ?? 1) === 1}
               onChange={e => handleChange('use_global_delay', e.target.checked ? 1 : 0)}
             />

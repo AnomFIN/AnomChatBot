@@ -26,14 +26,25 @@ const FLIRT_DESCRIPTIONS = {
  *
  * @param {object} conversation — DB row from conversations table
  * @param {object} config — App config (for defaults)
+ * @param {object} [approachContext] — Optional context for approach messages
  * @returns {string} The assembled system prompt
  */
-export function buildSystemPrompt(conversation, config) {
+export function buildSystemPrompt(conversation, config, approachContext = null) {
   const parts = [];
 
   // Base persona — per-conversation system prompt or built-in fallback
   const base = conversation.system_prompt || 'You are a helpful assistant.';
   parts.push(base);
+
+  // Special context for approach messages
+  if (approachContext?.isApproachMessage) {
+    const { approachNumber, maxApproaches } = approachContext;
+    parts.push(
+      `IMPORTANT: The user has not responded to your previous messages. This is your ${approachNumber} out of ${maxApproaches} follow-up messages. ` +
+      'Be engaging and try to re-start the conversation naturally. Don\'t be pushy or mention that they haven\'t responded. ' +
+      'Ask an interesting question, share something relevant, or provide value to encourage them to engage.'
+    );
+  }
 
   // Tone modifier
   const tone = conversation.tone || config.defaults?.tone || 'friendly';
@@ -68,15 +79,16 @@ export function buildSystemPrompt(conversation, config) {
  * @param {object} conversation — DB row
  * @param {Array<object>} recentMessages — From getRecentMessages (chronological order)
  * @param {object} config — App config
+ * @param {object} [approachContext] — Optional approach message context
  * @returns {Array<{role: string, content: string|Array}>}
  */
-export function buildMessages(conversation, recentMessages, config) {
+export function buildMessages(conversation, recentMessages, config, approachContext = null) {
   const messages = [];
 
-  // System prompt
+  // System prompt (with approach context if applicable)
   messages.push({
     role: 'system',
-    content: buildSystemPrompt(conversation, config),
+    content: buildSystemPrompt(conversation, config, approachContext),
   });
 
   // Conversation history — already in chronological order from getRecentMessages

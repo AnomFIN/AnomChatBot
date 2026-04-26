@@ -36,7 +36,19 @@ function ProfileAvatar({ conversationId, displayName }) {
 export default function ConversationList({ conversations, selectedId, onSelect, botActivities, onNewConversation }) {
   const [search, setSearch] = useState('');
 
-  const filtered = conversations.filter(c => {
+  // Deduplicate conversations by platform + remote_id, keeping only the most recent one
+  const deduplicatedConversations = conversations.reduce((acc, conversation) => {
+    const key = `${conversation.platform}:${conversation.remote_id}`;
+    const existing = acc.get(key);
+    
+    if (!existing || (conversation.updated_at || '') > (existing.updated_at || '')) {
+      acc.set(key, conversation);
+    }
+    
+    return acc;
+  }, new Map()).values();
+
+  const filtered = Array.from(deduplicatedConversations).filter(c => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -75,6 +87,14 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
         {sorted.map(c => {
           const activity = botActivities?.[c.id];
           const activityLabel = activity && activity !== 'idle' ? ACTIVITY_LABELS[activity] : null;
+          
+          // Create a more readable display name
+          const displayName = c.display_name && c.display_name.trim() && c.display_name !== c.remote_id
+            ? c.display_name
+            : c.remote_id || 'Unknown';
+          
+          // Show remote_id in meta if different from display name
+          const showRemoteId = c.display_name && c.display_name.trim() && c.display_name !== c.remote_id;
 
           return (
             <div
@@ -83,16 +103,21 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
               onClick={() => onSelect(c.id)}
             >
               <div className="conversation-item-row">
-                <ProfileAvatar conversationId={c.id} displayName={c.display_name || c.remote_id} />
+                <ProfileAvatar conversationId={c.id} displayName={displayName} />
                 <div className="conversation-item-content">
                   <div className="conversation-item-header">
-                    <span className="conversation-name">
-                      {c.display_name || c.remote_id || 'Unknown'}
+                    <span className="conversation-name" title={displayName}>
+                      {displayName}
                     </span>
                     <span className="conversation-platform">
                       {c.platform === 'whatsapp_cloud' ? 'Cloud' : c.platform === 'whatsapp_baileys' ? 'Baileys' : c.platform}
                     </span>
                   </div>
+                  {showRemoteId && (
+                    <div className="conversation-remote-id">
+                      {c.remote_id}
+                    </div>
+                  )}
                   <div className="conversation-item-meta">
                     {activityLabel ? (
                       <span className="bot-activity-label">{activityLabel}</span>

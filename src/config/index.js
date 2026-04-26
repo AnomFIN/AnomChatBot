@@ -11,6 +11,8 @@ export const VALID_FLIRTS = ['none', 'subtle', 'moderate', 'high'];
 export const VALID_WHATSAPP_MODES = ['cloud_api', 'baileys'];
 export const VALID_AI_PROVIDERS = ['openai', 'openai_compatible'];
 export const VALID_LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
+export const VALID_AI_APPROACH_MAX_MESSAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+export const VALID_AI_APPROACH_DELAY_MINUTES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440];
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import { getConversation, updateConversationSettings } from '../persistence/conversations.js';
 import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
-import { VALID_TONES, VALID_FLIRTS, redactSecret } from '../config/index.js';
+import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, redactSecret } from '../config/index.js';
 
 /**
  * Settings API routes.
@@ -119,6 +119,9 @@ export default async function settingsRoutes(fastify, opts) {
         use_global_ai: conversation.use_global_ai ?? 1,
         use_global_delay: conversation.use_global_delay ?? 1,
         ai_history_mode: conversation.ai_history_mode || 'partial',
+        ai_approach_enabled: conversation.ai_approach_enabled ?? 0,
+        ai_approach_max_messages: conversation.ai_approach_max_messages ?? 3,
+        ai_approach_delay_minutes: conversation.ai_approach_delay_minutes ?? 10,
       },
     };
   });
@@ -201,6 +204,25 @@ export default async function settingsRoutes(fastify, opts) {
       }
     }
 
+    // Validate AI approach fields
+    if (body.ai_approach_enabled !== undefined) {
+      if (body.ai_approach_enabled !== 0 && body.ai_approach_enabled !== 1) {
+        errors.push('ai_approach_enabled must be 0 or 1');
+      }
+    }
+
+    if (body.ai_approach_max_messages !== undefined) {
+      if (!VALID_AI_APPROACH_MAX_MESSAGES.includes(body.ai_approach_max_messages)) {
+        errors.push(`ai_approach_max_messages must be one of: ${VALID_AI_APPROACH_MAX_MESSAGES.join(', ')}`);
+      }
+    }
+
+    if (body.ai_approach_delay_minutes !== undefined) {
+      if (!VALID_AI_APPROACH_DELAY_MINUTES.includes(body.ai_approach_delay_minutes)) {
+        errors.push(`ai_approach_delay_minutes must be one of: ${VALID_AI_APPROACH_DELAY_MINUTES.join(', ')}`);
+      }
+    }
+
     if (errors.length > 0) {
       reply.code(400);
       return { success: false, error: errors.join('; ') };
@@ -212,7 +234,7 @@ export default async function settingsRoutes(fastify, opts) {
       'max_tokens', 'max_history', 'auto_reply', 'display_name',
       'preset_id', 'ai_provider', 'ai_base_url', 'ai_model',
       'reply_delay_min', 'reply_delay_max', 'use_global_ai', 'use_global_delay',
-      'ai_history_mode',
+      'ai_history_mode', 'ai_approach_enabled', 'ai_approach_max_messages', 'ai_approach_delay_minutes',
     ];
     const updates = {};
     for (const key of allowedKeys) {
