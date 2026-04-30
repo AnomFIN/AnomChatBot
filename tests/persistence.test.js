@@ -110,7 +110,7 @@ describe('Conversations CRUD', () => {
     expect(conv.temperature).toBe(0.7);
     expect(conv.max_tokens).toBe(1000);
     expect(conv.max_history).toBe(50);
-    expect(conv.auto_reply).toBe(0);
+    expect(conv.auto_reply).toBe(1);
     expect(conv.use_global_ai).toBe(1);
     expect(conv.use_global_delay).toBe(1);
     expect(conv.ai_history_mode).toBe('partial');

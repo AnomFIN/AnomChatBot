@@ -288,7 +288,7 @@ describe('GET /api/conversations/:id/settings', () => {
     expect(body.data.tone).toBe('friendly');
     expect(body.data.flirt).toBe('none');
     expect(body.data.temperature).toBe(0.7);
-    expect(body.data.auto_reply).toBe(0);
+    expect(body.data.auto_reply).toBe(1);
   });
 });
 

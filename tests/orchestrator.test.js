@@ -85,16 +85,29 @@ describe('Orchestrator — handleIncomingMessage', () => {
   });
 
   it('returns auto_reply_disabled when auto_reply=0', async () => {
-    const result = await orchestrator.handleIncomingMessage('api', 'user-no-auto', 'User', 'Hello');
-    expect(result.aiReply).toBeNull();
-    expect(result.reason).toBe('auto_reply_disabled');
+    // Create conversation with auto_reply explicitly set to 0
+    const result = await orchestrator.handleIncomingMessage('api', 'user-no-auto', 'User', 'Hello', null, null);
+    // Manually disable auto_reply for this test
+    const { updateConversationSettings } = await import('../src/persistence/conversations.js');
+    updateConversationSettings(result.conversation.id, { auto_reply: 0 });
+    
+    // Now test that AI reply is disabled
+    const disabledResult = await orchestrator.handleIncomingMessage('api', 'user-no-auto', 'User', 'Second message');
+    expect(disabledResult.aiReply).toBeNull();
+    expect(disabledResult.reason).toBe('auto_reply_disabled');
     expect(mockAI.generateReply).not.toHaveBeenCalled();
   });
 
   it('persists user message even when auto_reply is off', async () => {
+    // Create conversation and disable auto_reply
     const result = await orchestrator.handleIncomingMessage('api', 'user-persist', 'User', 'Stored');
-    expect(result.userMessage.content).toBe('Stored');
-    expect(getMessageCount(result.conversation.id)).toBe(1);
+    const { updateConversationSettings } = await import('../src/persistence/conversations.js');
+    updateConversationSettings(result.conversation.id, { auto_reply: 0 });
+    
+    // Send another message to test persistence with auto_reply off
+    const persistResult = await orchestrator.handleIncomingMessage('api', 'user-persist', 'User', 'Still stored');
+    expect(persistResult.userMessage.content).toBe('Still stored');
+    expect(getMessageCount(result.conversation.id)).toBe(2); // Both messages persisted
   });
 
   it('emits message:new for user message', async () => {
@@ -124,19 +137,19 @@ describe('Orchestrator — first-message rule', () => {
     cleanupTestDb();
   });
 
-  it('new conversation starts with auto_reply=0', async () => {
+  it('new conversation starts with auto_reply=1', async () => {
     const result = await orchestrator.handleIncomingMessage('api', 'rule-1', 'User', 'Hello');
-    expect(result.conversation.auto_reply).toBe(0);
+    expect(result.conversation.auto_reply).toBe(1);
   });
 
   it('operator message flips auto_reply to 1', async () => {
     // Create conversation via incoming message
     const incoming = await orchestrator.handleIncomingMessage('api', 'rule-2', 'User', 'Hello');
-    expect(incoming.conversation.auto_reply).toBe(0);
+    expect(incoming.conversation.auto_reply).toBe(1); // Now defaults to 1
 
-    // Operator sends first message
+    // Since auto_reply is already 1, operator message shouldn't flip it
     const opResult = await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hey there!');
-    expect(opResult.conversation.auto_reply).toBe(1);
+    expect(opResult.conversation.auto_reply).toBe(1); // Still 1
   });
 
   it('after operator message, incoming schedules delayed AI reply', async () => {

@@ -63,7 +63,7 @@ function runV1(db) {
       temperature REAL NOT NULL DEFAULT 0.7,
       max_tokens INTEGER NOT NULL DEFAULT 1000,
       max_history INTEGER NOT NULL DEFAULT 50,
-      auto_reply INTEGER NOT NULL DEFAULT 0,
+      auto_reply INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(platform, remote_id)

@@ -30,7 +30,7 @@ export function createConversation({ platform, remoteId, displayName = '', defau
     defaults.temperature ?? 0.7,
     defaults.max_tokens ?? 1000,
     defaults.max_history ?? 50,
-    defaults.auto_reply ?? 0,
+    defaults.auto_reply ?? 1,
     defaults.preset_id ?? null,
     0,
   );
