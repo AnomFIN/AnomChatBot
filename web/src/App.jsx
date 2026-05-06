@@ -1,5 +1,5 @@
 // Less noise. More signal. AnomFIN.
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { SocketProvider } from './context/SocketContext.jsx';
 import { useConversations, useBotActivity } from './hooks/useConversations.js';
 import { useStatus } from './hooks/useStatus.js';
@@ -22,7 +22,7 @@ function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'presets' | 'global' | 'qr' | 'logs'
-  const [branding, setBranding] = useState({});
+  const [branding, setBranding] = useState(() => normalizeBrandingSettings({}));
   const [showSidebar, setShowSidebar] = useState(() => {
     const saved = localStorage.getItem('anomchatbot-sidebar-visible');
     return saved !== null ? JSON.parse(saved) : true;
@@ -36,7 +36,7 @@ function Dashboard() {
 
   useEffect(() => {
     getGlobalSettings()
-      .then(setBranding)
+      .then(data => setBranding(normalizeBrandingSettings(data)))
       .catch(() => {});
   }, []);
 
@@ -57,6 +57,24 @@ function Dashboard() {
     setShowSidebar(prev => !prev);
   };
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.debug('[branding]', {
+      hasLogo: Boolean(branding.topBarLogoDataUrl),
+      hasBackground: Boolean(branding.chatBackgroundDataUrl),
+    });
+  }, [branding.topBarLogoDataUrl, branding.chatBackgroundDataUrl]);
+
+  const chatBackgroundStyle = useMemo(() => (
+    branding.chatBackgroundDataUrl
+      ? { '--chat-background-image': `url(${branding.chatBackgroundDataUrl})` }
+      : undefined
+  ), [branding.chatBackgroundDataUrl]);
+
+  const handleBrandingSettingsChange = (settings) => {
+    setBranding(normalizeBrandingSettings(settings));
+  };
+
   const handleNewConversationCreated = (conversation, existed) => {
     setShowNewConversation(false);
     setSelectedId(conversation.id);
@@ -64,11 +82,8 @@ function Dashboard() {
   };
 
   return (
-    <div
-      className={`app-container ${branding.branding_chat_background ? 'has-chat-background' : ''}`}
-      style={branding.branding_chat_background ? { '--chat-bg-image': `url(${branding.branding_chat_background})` } : undefined}
-    >
-      <StatusBar status={status} botActivities={botActivities} logoSrc={branding.branding_top_bar_logo} />
+    <div className="app-container">
+      <StatusBar status={status} botActivities={botActivities} branding={branding} />
 
       <div className="app-nav">
         <button className={activeTab === 'chat' ? 'active' : ''} onClick={() => setActiveTab('chat')}>
@@ -100,7 +115,14 @@ function Dashboard() {
                 onNewConversation={() => setShowNewConversation(true)}
               />
             )}
-            <div className="chat-main">
+            <div className={`chat-main chat-shell ${branding.chatBackgroundDataUrl ? 'has-chat-background' : ''}`} style={chatBackgroundStyle}>
+              {branding.chatBackgroundDataUrl && (
+                <>
+                  <div className="chat-background-layer" aria-hidden="true" />
+                  <div className="chat-background-overlay" aria-hidden="true" />
+                </>
+              )}
+              <div className="chat-content">
               <button
                 className="sidebar-toggle"
                 onClick={toggleSidebar}
@@ -121,6 +143,7 @@ function Dashboard() {
                   {showSettings ? 'Hide Settings' : 'Settings'}
                 </button>
               )}
+              </div>
             </div>
             {showSettings && selectedId && (
               <SettingsPanel
@@ -133,7 +156,7 @@ function Dashboard() {
 
         {activeTab === 'presets' && <PresetsManager />}
 
-        {activeTab === 'global' && <GlobalSettings status={status} onBrandingChange={setBranding} />}
+        {activeTab === 'global' && <GlobalSettings status={status} onBrandingChange={handleBrandingSettingsChange} />}
 
         {activeTab === 'qr' && (
           <QRCodeDisplay whatsappStatus={status?.whatsapp || { mode: status?.modes?.whatsappMode }} />
@@ -158,4 +181,12 @@ export default function App() {
       <Dashboard />
     </SocketProvider>
   );
+}
+
+
+function normalizeBrandingSettings(settings) {
+  return {
+    topBarLogoDataUrl: settings?.branding_top_bar_logo || null,
+    chatBackgroundDataUrl: settings?.branding_chat_background || null,
+  };
 }

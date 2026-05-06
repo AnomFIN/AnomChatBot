@@ -9,6 +9,7 @@ import fastifyStatic from '@fastify/static';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = join(__dirname, '../web/dist');
 const MEDIA_DIR = join(process.cwd(), 'data', 'media');
+const JSON_BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 
 /**
  * Create and configure the Fastify server instance.
@@ -16,6 +17,7 @@ const MEDIA_DIR = join(process.cwd(), 'data', 'media');
  */
 export function createServer(config) {
   const fastify = Fastify({
+    bodyLimit: JSON_BODY_LIMIT_BYTES,
     logger: {
       level: config.logLevel,
       transport: {

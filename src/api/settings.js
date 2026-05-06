@@ -2,7 +2,8 @@ import { getConversation, updateConversationSettings } from '../persistence/conv
 import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
 import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, VALID_LOCAL_AI_MCP_MODES, redactSecret } from '../config/index.js';
 
-const MAX_BRANDING_DATA_BYTES = 3 * 1024 * 1024;
+const MAX_LOGO_DATA_BYTES = 3 * 1024 * 1024;
+const MAX_BACKGROUND_DATA_BYTES = 5 * 1024 * 1024;
 const LOGO_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
 const BACKGROUND_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
@@ -78,8 +79,8 @@ export default async function settingsRoutes(fastify, opts) {
       errors.push(...integrationErrors);
     }
 
-    validateBrandingDataUrl(body.branding_top_bar_logo, 'branding_top_bar_logo', LOGO_MIME_TYPES, errors);
-    validateBrandingDataUrl(body.branding_chat_background, 'branding_chat_background', BACKGROUND_MIME_TYPES, errors);
+    validateBrandingDataUrl(body.branding_top_bar_logo, 'branding_top_bar_logo', LOGO_MIME_TYPES, MAX_LOGO_DATA_BYTES, errors);
+    validateBrandingDataUrl(body.branding_chat_background, 'branding_chat_background', BACKGROUND_MIME_TYPES, MAX_BACKGROUND_DATA_BYTES, errors);
 
     // Validate presence settings
     if (body.presence_typing_speed !== undefined) {
@@ -313,7 +314,7 @@ export default async function settingsRoutes(fastify, opts) {
 }
 
 
-function validateBrandingDataUrl(value, key, allowedMimeTypes, errors) {
+function validateBrandingDataUrl(value, key, allowedMimeTypes, maxBytes, errors) {
   if (value === undefined || value === '') return;
   if (typeof value !== 'string') {
     errors.push(`${key} must be a string data URL`);
@@ -334,8 +335,8 @@ function validateBrandingDataUrl(value, key, allowedMimeTypes, errors) {
 
   const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0;
   const byteLength = Math.floor((payload.length * 3) / 4) - padding;
-  if (byteLength > MAX_BRANDING_DATA_BYTES) {
-    errors.push(`${key} must be 3MB or smaller`);
+  if (byteLength > maxBytes) {
+    errors.push(`${key} must be ${Math.round(maxBytes / 1024 / 1024)}MB or smaller`);
   }
 }
 

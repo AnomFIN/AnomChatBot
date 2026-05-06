@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { getGlobalSettings, updateGlobalSettings } from '../api/client.js';
 
-const MAX_BRANDING_FILE_BYTES = 3 * 1024 * 1024;
+const MAX_LOGO_FILE_BYTES = 3 * 1024 * 1024;
+const MAX_BACKGROUND_FILE_BYTES = 5 * 1024 * 1024;
 const LOGO_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
 const BACKGROUND_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const MCP_MODES = [
@@ -20,6 +21,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
   const [integrationForm, setIntegrationForm] = useState(EMPTY_INTEGRATION_FORM);
+  const [brandingDrafts, setBrandingDrafts] = useState(() => createEmptyBrandingDrafts());
 
   useEffect(() => {
     loadSettings();
@@ -28,8 +30,10 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const loadSettings = async () => {
     try {
       const data = await getGlobalSettings();
-      setSettings(hydrateSettings(data));
-      onBrandingChange?.(data);
+      const hydrated = hydrateSettings(data);
+      setSettings(hydrated);
+      setBrandingDrafts(createBrandingDraftsFromSettings(hydrated));
+      onBrandingChange?.(hydrated);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -84,36 +88,70 @@ export default function GlobalSettings({ status, onBrandingChange }) {
     handleChange('local_ai_mcp_integrations', JSON.stringify(next));
   };
 
-  const handleBrandingChange = (key, value) => {
-    setSettings(prev => {
-      const next = { ...prev, [key]: value };
-      onBrandingChange?.(next);
-      return next;
-    });
-    setSaved(false);
-  };
-
-  const handleBrandingUpload = async (event, key, allowedTypes) => {
+  const handleBrandingFileSelect = async (event, key, allowedTypes, maxBytes) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
 
     if (!allowedTypes.has(file.type)) {
-      setError(key === 'branding_chat_background' ? 'Chat background must be PNG, JPEG, or WebP.' : 'Logo must be PNG, JPEG, WebP, or SVG.');
+      setBrandingDraft(key, { error: getBrandingTypeError(key), filename: file.name, previewDataUrl: null });
       return;
     }
-    if (file.size > MAX_BRANDING_FILE_BYTES) {
-      setError('Branding images must be 3MB or smaller.');
+    if (file.size > maxBytes) {
+      setBrandingDraft(key, { error: `${getBrandingLabel(key)} must be ${formatBytes(maxBytes)} or smaller.`, filename: file.name, previewDataUrl: null });
       return;
     }
 
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      handleBrandingChange(key, dataUrl);
-      setError(null);
+      setBrandingDraft(key, { error: null, filename: file.name, previewDataUrl: dataUrl });
+    } catch {
+      setBrandingDraft(key, { error: 'Failed to read file.', filename: file.name, previewDataUrl: null });
+    }
+  };
+
+  const handleApplyBranding = async (key) => {
+    const draft = brandingDrafts[key];
+    if (!draft?.previewDataUrl || draft.error) return;
+    await saveBrandingValue(key, draft.previewDataUrl, draft.filename);
+  };
+
+  const handleResetBranding = async (key) => {
+    await saveBrandingValue(key, '', '');
+  };
+
+  const saveBrandingValue = async (key, value, filename) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = serializeSettings({ ...settings, [key]: value });
+      const data = await updateGlobalSettings(payload);
+      const hydrated = hydrateSettings(data);
+      setSettings(hydrated);
+      setBrandingDrafts(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          filename,
+          previewDataUrl: hydrated[key] || null,
+          error: null,
+        },
+      }));
+      onBrandingChange?.(hydrated);
+      setSaved(true);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSaving(false);
     }
+  };
+
+  const setBrandingDraft = (key, patch) => {
+    setBrandingDrafts(prev => ({
+      ...prev,
+      [key]: { ...prev[key], ...patch },
+    }));
+    setSaved(false);
   };
 
   const handleSave = async () => {
@@ -124,6 +162,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
       const data = await updateGlobalSettings(payload);
       const hydrated = hydrateSettings(data);
       setSettings(hydrated);
+      setBrandingDrafts(createBrandingDraftsFromSettings(hydrated));
       onBrandingChange?.(hydrated);
       setSaved(true);
     } catch (err) {
@@ -270,25 +309,37 @@ export default function GlobalSettings({ status, onBrandingChange }) {
             </div>
           )}
 
-          <div className="gs-section settings-card">
+          <div className="gs-section settings-card branding-settings-card">
             <h4>Branding / Visual Settings</h4>
-            <div className="branding-controls">
-              <label>Top bar logo
-                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={e => handleBrandingUpload(e, 'branding_top_bar_logo', LOGO_TYPES)} />
-              </label>
-              <button type="button" className="secondary-btn" onClick={() => handleBrandingChange('branding_top_bar_logo', '')}>Reset top bar logo</button>
-              <label>Chat background image
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={e => handleBrandingUpload(e, 'branding_chat_background', BACKGROUND_TYPES)} />
-              </label>
-              <button type="button" className="secondary-btn" onClick={() => handleBrandingChange('branding_chat_background', '')}>Reset background image</button>
-            </div>
-            <div className="branding-preview">
-              <div className="branding-preview-topbar">
-                {settings.branding_top_bar_logo ? <img src={settings.branding_top_bar_logo} alt="Current top bar logo preview" /> : <span>AnomChatBot</span>}
-              </div>
-              <div className="branding-preview-chat" style={settings.branding_chat_background ? { '--preview-bg': `url(${settings.branding_chat_background})` } : undefined}>
-                <span>Preview current branding</span>
-              </div>
+            <span className="field-hint">Branding is stored in server settings and applied only after a successful Apply.</span>
+            <div className="branding-card-grid">
+              <BrandingUploadCard
+                title="Top bar logo"
+                hint="PNG, JPG, WEBP, or SVG · max 3MB"
+                inputId="branding-logo-upload"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                currentDataUrl={settings.branding_top_bar_logo || ''}
+                draft={brandingDrafts.branding_top_bar_logo}
+                fallback={<span>AnomChatBot</span>}
+                onSelect={e => handleBrandingFileSelect(e, 'branding_top_bar_logo', LOGO_TYPES, MAX_LOGO_FILE_BYTES)}
+                onApply={() => handleApplyBranding('branding_top_bar_logo')}
+                onReset={() => handleResetBranding('branding_top_bar_logo')}
+                saving={saving}
+              />
+              <BrandingUploadCard
+                title="Chat background image"
+                hint="PNG, JPG, or WEBP · max 5MB"
+                inputId="branding-background-upload"
+                accept="image/png,image/jpeg,image/webp"
+                currentDataUrl={settings.branding_chat_background || ''}
+                draft={brandingDrafts.branding_chat_background}
+                backgroundPreview
+                fallback={<span>No background set</span>}
+                onSelect={e => handleBrandingFileSelect(e, 'branding_chat_background', BACKGROUND_TYPES, MAX_BACKGROUND_FILE_BYTES)}
+                onApply={() => handleApplyBranding('branding_chat_background')}
+                onReset={() => handleResetBranding('branding_chat_background')}
+                saving={saving}
+              />
             </div>
           </div>
 
@@ -380,6 +431,82 @@ function isValidUrl(value) {
   } catch {
     return false;
   }
+}
+
+function BrandingUploadCard({
+  title,
+  hint,
+  inputId,
+  accept,
+  currentDataUrl,
+  draft,
+  fallback,
+  backgroundPreview = false,
+  onSelect,
+  onApply,
+  onReset,
+  saving,
+}) {
+  const previewDataUrl = draft?.previewDataUrl || currentDataUrl;
+  const canApply = Boolean(draft?.previewDataUrl) && draft.previewDataUrl !== currentDataUrl && !draft.error && !saving;
+  const canReset = Boolean(currentDataUrl) && !saving;
+
+  return (
+    <div className="branding-upload-card">
+      <div className="branding-upload-header">
+        <div>
+          <strong>{title}</strong>
+          <span>{hint}</span>
+        </div>
+      </div>
+      <div
+        className={`branding-upload-preview ${backgroundPreview ? 'is-background' : 'is-logo'}`}
+        style={previewDataUrl && backgroundPreview ? { '--branding-preview-image': `url(${previewDataUrl})` } : undefined}
+      >
+        {previewDataUrl ? (
+          backgroundPreview ? <span>Background preview</span> : <img src={previewDataUrl} alt={`${title} preview`} />
+        ) : fallback}
+      </div>
+      <div className="branding-file-row">
+        <label className="secondary-btn branding-file-button" htmlFor={inputId}>Choose file</label>
+        <input id={inputId} className="branding-file-input" type="file" accept={accept} onChange={onSelect} />
+        <span className="branding-filename">{draft?.filename || 'No file selected'}</span>
+      </div>
+      {draft?.error && <div className="settings-error branding-error">{draft.error}</div>}
+      <div className="branding-actions">
+        <button type="button" className="secondary-btn" onClick={onApply} disabled={!canApply}>Apply</button>
+        <button type="button" className="secondary-btn danger-lite" onClick={onReset} disabled={!canReset}>Reset</button>
+      </div>
+    </div>
+  );
+}
+
+function createEmptyBrandingDrafts() {
+  return {
+    branding_top_bar_logo: { filename: '', previewDataUrl: null, error: null },
+    branding_chat_background: { filename: '', previewDataUrl: null, error: null },
+  };
+}
+
+function createBrandingDraftsFromSettings(settings) {
+  return {
+    branding_top_bar_logo: { filename: '', previewDataUrl: settings.branding_top_bar_logo || null, error: null },
+    branding_chat_background: { filename: '', previewDataUrl: settings.branding_chat_background || null, error: null },
+  };
+}
+
+function getBrandingTypeError(key) {
+  return key === 'branding_chat_background'
+    ? 'Unsupported file type. Background must be PNG, JPG, JPEG, or WEBP.'
+    : 'Unsupported file type. Logo must be PNG, JPG, JPEG, WEBP, or SVG.';
+}
+
+function getBrandingLabel(key) {
+  return key === 'branding_chat_background' ? 'Chat background image' : 'Top bar logo';
+}
+
+function formatBytes(bytes) {
+  return `${Math.round(bytes / 1024 / 1024)}MB`;
 }
 
 function readFileAsDataUrl(file) {

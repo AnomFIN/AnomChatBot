@@ -299,11 +299,12 @@ Open **System → Global Settings → Branding / Visual Settings** to upload pre
 
 - top bar logo: PNG, JPG/JPEG, WEBP, or SVG rendered through a safe `<img>` tag
 - chat background image: PNG, JPG/JPEG, or WEBP
-- max file size: 3MB
+- max file size: 3MB for logos, 5MB for chat backgrounds
+- explicit Choose file → preview → Apply flow
 - reset buttons for logo and background
-- live preview before saving
+- persisted in the existing SQLite-backed settings API (`branding_top_bar_logo`, `branding_chat_background`)
 
-Chat backgrounds use `background-size: cover`, centered positioning, and a dark overlay/blur layer to keep messages readable.
+The top bar logo renders directly as an `<img class="topbar-logo">` in the status bar. Chat backgrounds render as a stable `.chat-background-layer` under `.chat-content`, with a dark overlay layer above the image so messages remain readable across scrolls and rerenders.
 
 ## Generation cancellation and follow-up safety
 
@@ -334,8 +335,10 @@ npm start
 2. Go to **System → Global Settings** and confirm cards for OpenAI, Local AI / LM Studio, MCP, Branding, and Advanced.
 3. Enable Local AI without token and verify LM Studio receives no `Authorization` header.
 4. Enable token mode without a token and verify the GUI/API shows a clear missing-token error.
-5. Upload/reset logo and background; confirm the top bar logo keeps aspect ratio and the chat remains readable.
-6. Send message A, then message B while the bot is thinking; only the newest AI response should be sent.
+5. Choose a logo file, confirm the filename/preview, click Apply, refresh, and confirm the top bar logo still renders.
+6. Choose a background file, confirm the filename/preview, click Apply, refresh, and confirm the chat background layer remains visible while scrolling.
+7. Try an oversized logo/background or unsupported file type and confirm the API/GUI rejects it clearly.
+8. Send message A, then message B while the bot is thinking; only the newest AI response should be sent.
 
 ## Next iterations
 
