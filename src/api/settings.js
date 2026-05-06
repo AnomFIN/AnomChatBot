@@ -21,6 +21,9 @@ export default async function settingsRoutes(fastify, opts) {
     if (redacted.ai_api_key) {
       redacted.ai_api_key = redactSecret(redacted.ai_api_key);
     }
+    if (redacted.local_ai_permission_token) {
+      redacted.local_ai_permission_token = redactSecret(redacted.local_ai_permission_token);
+    }
     return { success: true, data: redacted };
   });
 
@@ -62,6 +65,9 @@ export default async function settingsRoutes(fastify, opts) {
       'presence_enabled', 'presence_read_delay', 'presence_typing_speed',
       'presence_min_typing', 'presence_max_typing', 'presence_idle_after_send',
       'ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key',
+      'local_ai_enabled', 'local_ai_provider', 'local_ai_base_url', 'local_ai_model',
+      'local_ai_use_permission_token', 'local_ai_permission_token',
+      'local_ai_mcp_enabled', 'local_ai_mcp_config_path',
     ];
 
     const updates = {};
@@ -75,6 +81,9 @@ export default async function settingsRoutes(fastify, opts) {
     if (updates.ai_api_key && updates.ai_api_key.includes('...')) {
       delete updates.ai_api_key;
     }
+    if (updates.local_ai_permission_token && updates.local_ai_permission_token.includes('...')) {
+      delete updates.local_ai_permission_token;
+    }
 
     if (Object.keys(updates).length === 0) {
       return { success: true, data: { message: 'No changes' } };
@@ -85,6 +94,9 @@ export default async function settingsRoutes(fastify, opts) {
     const allSettings = getAllSettings();
     if (allSettings.ai_api_key) {
       allSettings.ai_api_key = redactSecret(allSettings.ai_api_key);
+    }
+    if (allSettings.local_ai_permission_token) {
+      allSettings.local_ai_permission_token = redactSecret(allSettings.local_ai_permission_token);
     }
 
     return { success: true, data: allSettings };

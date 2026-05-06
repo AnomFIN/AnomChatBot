@@ -10,6 +10,7 @@ export const VALID_TONES = ['professional', 'friendly', 'casual', 'playful'];
 export const VALID_FLIRTS = ['none', 'subtle', 'moderate', 'high'];
 export const VALID_WHATSAPP_MODES = ['cloud_api', 'baileys'];
 export const VALID_AI_PROVIDERS = ['openai', 'openai_compatible'];
+export const VALID_LOCAL_AI_PROVIDERS = ['lmstudio'];
 export const VALID_LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
 export const VALID_AI_APPROACH_MAX_MESSAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export const VALID_AI_APPROACH_DELAY_MINUTES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440];
@@ -94,6 +95,23 @@ export function validateConfig(env) {
     warnings.push('OPENAI_API_KEY not set — AI features will not work until configured');
   }
 
+  // ── Local AI / LM Studio ─────────────────────────────────────────────────
+  const localAiEnabled = parseBoolean(env.LOCAL_AI_ENABLED, false);
+  const localAiProvider = (env.LOCAL_AI_PROVIDER || 'lmstudio').toLowerCase();
+  const localAiBaseUrl = env.LOCAL_AI_BASE_URL || 'http://127.0.0.1:1234/v1';
+  const localAiModel = env.LOCAL_AI_MODEL || '';
+  const localAiUsePermissionToken = parseBoolean(env.LOCAL_AI_USE_PERMISSION_TOKEN, false);
+  const localAiPermissionToken = env.LOCAL_AI_PERMISSION_TOKEN || '';
+  const localAiMcpEnabled = parseBoolean(env.LOCAL_AI_MCP_ENABLED, false);
+  const localAiMcpConfigPath = env.LOCAL_AI_MCP_CONFIG_PATH || '.mcp.json';
+
+  if (localAiEnabled && !localAiModel) {
+    warnings.push('LOCAL_AI_ENABLED=true but LOCAL_AI_MODEL not set — local AI requests will fail');
+  }
+  if (localAiEnabled && localAiUsePermissionToken && !localAiPermissionToken) {
+    warnings.push('LOCAL_AI_USE_PERMISSION_TOKEN=true but LOCAL_AI_PERMISSION_TOKEN not set');
+  }
+
   // ── WhatsApp ─────────────────────────────────────────────────────────────
   const whatsappMode = (env.WHATSAPP_MODE || 'baileys').toLowerCase();
   if (!VALID_WHATSAPP_MODES.includes(whatsappMode)) {
@@ -175,6 +193,16 @@ export function validateConfig(env) {
       openaiBaseUrl,
       openaiModel,
     }),
+    localAi: Object.freeze({
+      enabled: localAiEnabled,
+      provider: localAiProvider,
+      baseUrl: localAiBaseUrl,
+      model: localAiModel,
+      usePermissionToken: localAiUsePermissionToken,
+      permissionToken: localAiPermissionToken,
+      mcpEnabled: localAiMcpEnabled,
+      mcpConfigPath: localAiMcpConfigPath,
+    }),
     whatsapp: Object.freeze({
       mode: whatsappMode,
       cloud: Object.freeze({
@@ -238,6 +266,16 @@ export function logConfigSummary(config, logger) {
   logger.info(`│ AI key:      ${redactSecret(config.ai.openaiApiKey)}`);
   if (config.ai.openaiBaseUrl) {
     logger.info(`│ AI base URL: ${config.ai.openaiBaseUrl}`);
+  }
+  if (config.localAi.enabled) {
+    logger.info(`│ Local AI:    enabled (${config.localAi.provider} @ ${config.localAi.baseUrl})`);
+    logger.info(`│ Local model: ${config.localAi.model || '(not set)'}`);
+    if (config.localAi.usePermissionToken) {
+      logger.info(`│ Local token: ${redactSecret(config.localAi.permissionToken)}`);
+    }
+    if (config.localAi.mcpEnabled) {
+      logger.info(`│ MCP config:  ${config.localAi.mcpConfigPath}`);
+    }
   }
   logger.info(`│ WhatsApp:    ${config.whatsapp.mode}`);
   logger.info(`│ Telegram:    ${config.telegram.enabled ? 'enabled' : 'disabled'}`);

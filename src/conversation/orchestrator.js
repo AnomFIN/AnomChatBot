@@ -117,9 +117,61 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
   /**
    * Check global settings table for runtime AI overrides.
    * Returns a cached provider if global overrides are configured, or null.
+   * Local AI / LM Studio settings take precedence when local_ai_enabled=true.
    */
   function _getGlobalAIProvider() {
-    const settings = getSettingsBulk(['ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key']);
+    const settings = getSettingsBulk([
+      'ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key',
+      'local_ai_enabled', 'local_ai_base_url', 'local_ai_model',
+      'local_ai_use_permission_token', 'local_ai_permission_token',
+    ]);
+
+    // ── Local AI / LM Studio override ────────────────────────────────────
+    const localAiEnabledSetting = settings.local_ai_enabled;
+    const localAiActive =
+      localAiEnabledSetting === 'true' ||
+      (localAiEnabledSetting === undefined && config.localAi?.enabled);
+
+    if (localAiActive) {
+      const baseUrl = settings.local_ai_base_url || config.localAi?.baseUrl || 'http://127.0.0.1:1234/v1';
+      const model = settings.local_ai_model || config.localAi?.model || '';
+      if (!model) return null; // Can't create provider without model
+
+      const useToken =
+        settings.local_ai_use_permission_token === 'true' ||
+        (settings.local_ai_use_permission_token === undefined && config.localAi?.usePermissionToken);
+      const token =
+        settings.local_ai_permission_token || config.localAi?.permissionToken || '';
+
+      // Use permission token as apiKey so the SDK sends Authorization: Bearer <token>
+      const apiKey = (useToken && token) ? token : 'local-ai-key';
+
+      const cacheKey = `local_ai|${baseUrl}|${model}|${apiKey}`;
+      if (conversationProviders.has(cacheKey)) {
+        return conversationProviders.get(cacheKey);
+      }
+
+      const localAiConfig = {
+        ai: {
+          provider: 'openai_compatible',
+          openaiApiKey: apiKey,
+          openaiBaseUrl: baseUrl,
+          openaiModel: model,
+        },
+      };
+
+      try {
+        const provider = createAIProvider(localAiConfig);
+        conversationProviders.set(cacheKey, provider);
+        log('info', `Created Local AI provider (lmstudio @ ${baseUrl}, model: ${model})`);
+        return provider;
+      } catch (err) {
+        log('warn', `Failed to create Local AI provider: ${err.message}`);
+        return null;
+      }
+    }
+
+    // ── Standard global AI override ───────────────────────────────────────
     if (!settings.ai_provider || !settings.ai_model) {
       return null;
     }
@@ -521,8 +573,6 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
         auto_reply: 1,
         first_message_sent_manually: 1,
       });
-      const updated = getConversation(conversationId);
-      emit('conversation:update', { conversation: updated });
     }
 
     // Send to WhatsApp via transport
@@ -565,8 +615,11 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
     touchConversation(conversationId);
 
+    const updatedConversation = getConversation(conversationId);
+    emit('conversation:update', { conversation: updatedConversation });
+
     return {
-      conversation: getConversation(conversationId),
+      conversation: updatedConversation,
       message,
       delivery,
     };

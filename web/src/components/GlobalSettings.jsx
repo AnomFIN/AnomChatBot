@@ -185,6 +185,96 @@ export default function GlobalSettings({ status }) {
           </div>
 
           <div className="gs-section">
+            <h4>Local AI / LM Studio Settings</h4>
+            <span className="field-hint">
+              Configure a local AI provider (LM Studio). When enabled, Local AI takes priority over the
+              standard AI Provider settings above. OpenAI cloud usage is not affected.
+            </span>
+
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={settings.local_ai_enabled === 'true' || settings.local_ai_enabled === true}
+                onChange={e => handleChange('local_ai_enabled', e.target.checked ? 'true' : 'false')}
+              />
+              Enable Local AI
+            </label>
+
+            <label>
+              Local AI Provider
+              <select
+                value={settings.local_ai_provider || 'lmstudio'}
+                onChange={e => handleChange('local_ai_provider', e.target.value)}
+              >
+                <option value="lmstudio">LM Studio</option>
+              </select>
+            </label>
+
+            <label>
+              Local AI Base URL
+              <input
+                type="text"
+                value={settings.local_ai_base_url || ''}
+                placeholder="http://127.0.0.1:1234/v1"
+                onChange={e => handleChange('local_ai_base_url', e.target.value)}
+              />
+              <span className="field-hint">Default: http://127.0.0.1:1234/v1</span>
+            </label>
+
+            <label>
+              Local AI Model
+              <input
+                type="text"
+                value={settings.local_ai_model || ''}
+                placeholder="e.g. lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF"
+                onChange={e => handleChange('local_ai_model', e.target.value)}
+              />
+            </label>
+
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={settings.local_ai_use_permission_token === 'true' || settings.local_ai_use_permission_token === true}
+                onChange={e => handleChange('local_ai_use_permission_token', e.target.checked ? 'true' : 'false')}
+              />
+              Use LM Studio Permission Token
+            </label>
+
+            <label>
+              LM Studio Permission Token
+              <input
+                type="password"
+                value={settings.local_ai_permission_token || ''}
+                placeholder="Set permission token (stored securely, redacted in UI)"
+                onChange={e => handleChange('local_ai_permission_token', e.target.value)}
+              />
+              <span className="field-hint">
+                Used when LM Studio server authentication is enabled. Token is stored securely and redacted in UI.
+              </span>
+            </label>
+
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={settings.local_ai_mcp_enabled === 'true' || settings.local_ai_mcp_enabled === true}
+                onChange={e => handleChange('local_ai_mcp_enabled', e.target.checked ? 'true' : 'false')}
+              />
+              Enable MCP (Model Context Protocol)
+            </label>
+
+            <label>
+              MCP Config Path
+              <input
+                type="text"
+                value={settings.local_ai_mcp_config_path || ''}
+                placeholder=".mcp.json"
+                onChange={e => handleChange('local_ai_mcp_config_path', e.target.value)}
+              />
+              <span className="field-hint">Path to the MCP configuration file (default: .mcp.json)</span>
+            </label>
+          </div>
+
+          <div className="gs-section">
             <h4>Reply Delay</h4>
             <span className="field-hint">
               Human-like delay before AI replies. Multi-message batching resets the timer on each new message.

@@ -225,11 +225,13 @@ describe('Orchestrator — handleOperatorMessage', () => {
     await orchestrator.handleOperatorMessage(incoming.conversation.id, 'First reply');
     mockIO.emit.mockClear();
 
-    await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Second reply');
+    const result = await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Second reply');
 
-    // conversation:update should NOT be emitted since auto_reply is already 1
+    // auto_reply should still be 1 (not re-flipped)
+    expect(result.conversation.auto_reply).toBe(1);
+    // conversation:update IS emitted (operator message always updates conversation state)
     const updateCalls = mockIO.emit.mock.calls.filter(c => c[0] === 'conversation:update');
-    expect(updateCalls).toHaveLength(0);
+    expect(updateCalls).toHaveLength(1);
   });
 });
 
