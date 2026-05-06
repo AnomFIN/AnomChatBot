@@ -11,6 +11,7 @@ export const VALID_FLIRTS = ['none', 'subtle', 'moderate', 'high'];
 export const VALID_WHATSAPP_MODES = ['cloud_api', 'baileys'];
 export const VALID_AI_PROVIDERS = ['openai', 'openai_compatible'];
 export const VALID_LOCAL_AI_PROVIDERS = ['lmstudio'];
+export const VALID_LOCAL_AI_MCP_MODES = ['disabled', 'local_config', 'ephemeral'];
 export const VALID_LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
 export const VALID_AI_APPROACH_MAX_MESSAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export const VALID_AI_APPROACH_DELAY_MINUTES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440];
@@ -43,6 +44,14 @@ export function redactSecret(value) {
   if (!value || typeof value !== 'string') return '(not set)';
   if (value.length < 8) return '***';
   return value.slice(0, 4) + '...' + value.slice(-3);
+}
+
+function isJsonArray(value) {
+  try {
+    return Array.isArray(JSON.parse(value));
+  } catch {
+    return false;
+  }
 }
 
 function getVersion() {
@@ -99,7 +108,10 @@ export function validateConfig(env) {
   const localAiUsePermissionToken = parseBoolean(env.LOCAL_AI_USE_PERMISSION_TOKEN, false);
   const localAiPermissionToken = env.LOCAL_AI_PERMISSION_TOKEN || '';
   const localAiMcpEnabled = parseBoolean(env.LOCAL_AI_MCP_ENABLED, false);
+  const localAiMcpModeRaw = (env.LOCAL_AI_MCP_MODE || '').toLowerCase().trim();
+  const localAiMcpMode = localAiMcpModeRaw || (localAiMcpEnabled ? 'local_config' : 'disabled');
   const localAiMcpConfigPath = env.LOCAL_AI_MCP_CONFIG_PATH || '.mcp.json';
+  const localAiMcpIntegrations = env.LOCAL_AI_MCP_INTEGRATIONS || '[]';
 
   if (!VALID_LOCAL_AI_PROVIDERS.includes(localAiProvider)) {
     errors.push(`LOCAL_AI_PROVIDER must be one of: ${VALID_LOCAL_AI_PROVIDERS.join(', ')}`);
@@ -109,8 +121,14 @@ export function validateConfig(env) {
   if (localAiEnabled && localAiUsePermissionToken && !localAiPermissionToken) {
     warnings.push('LOCAL_AI_USE_PERMISSION_TOKEN=true but LOCAL_AI_PERMISSION_TOKEN is not set');
   }
-  if (localAiEnabled && localAiMcpEnabled && !localAiMcpConfigPath) {
-    errors.push('LOCAL_AI_MCP_CONFIG_PATH must not be empty when LOCAL_AI_MCP_ENABLED=true');
+  if (!VALID_LOCAL_AI_MCP_MODES.includes(localAiMcpMode)) {
+    errors.push(`LOCAL_AI_MCP_MODE must be one of: ${VALID_LOCAL_AI_MCP_MODES.join(', ')}`);
+  }
+  if (localAiEnabled && localAiMcpMode === 'local_config' && !localAiMcpConfigPath) {
+    errors.push('LOCAL_AI_MCP_CONFIG_PATH must not be empty when LOCAL_AI_MCP_MODE=local_config');
+  }
+  if (localAiEnabled && localAiMcpMode === 'ephemeral' && !isJsonArray(localAiMcpIntegrations)) {
+    errors.push('LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral');
   }
 
   if (VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
@@ -204,8 +222,10 @@ export function validateConfig(env) {
         model: localAiModel,
         usePermissionToken: localAiUsePermissionToken,
         permissionToken: localAiPermissionToken,
-        mcpEnabled: localAiMcpEnabled,
+        mcpEnabled: localAiMcpMode !== 'disabled',
+        mcpMode: localAiMcpMode,
         mcpConfigPath: localAiMcpConfigPath,
+        mcpIntegrations: localAiMcpIntegrations,
       }),
     }),
     whatsapp: Object.freeze({

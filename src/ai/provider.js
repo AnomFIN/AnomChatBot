@@ -2,6 +2,9 @@
 import OpenAI from 'openai';
 
 const LOCAL_PROVIDER = 'lmstudio';
+const MCP_MODE_DISABLED = 'disabled';
+const MCP_MODE_LOCAL_CONFIG = 'local_config';
+const MCP_MODE_EPHEMERAL = 'ephemeral';
 
 /**
  * Create an AI provider backed by OpenAI cloud or Local AI / LM Studio.
@@ -11,7 +14,7 @@ const LOCAL_PROVIDER = 'lmstudio';
 export function createAIProvider(config) {
   const localAi = config.ai?.localAi ?? config.localAi ?? {};
   if (localAi.enabled) {
-    return createLocalAIProvider(localAi);
+    return createLocalAIProvider(localAi, config.logger);
   }
   return createOpenAIProvider(config.ai);
 }
@@ -126,12 +129,14 @@ function createOpenAIProvider(aiConfig) {
   return { generateReply, testConnection, getStatus };
 }
 
-function createLocalAIProvider(localAi) {
+function createLocalAIProvider(localAi, logger = null) {
   const provider = localAi.provider || LOCAL_PROVIDER;
   const baseUrl = normalizeBaseUrl(localAi.baseUrl || '');
   const model = localAi.model || '';
   const usePermissionToken = parseBooleanFlag(localAi.usePermissionToken);
   const permissionToken = localAi.permissionToken || '';
+  const mcpMode = normalizeMcpMode(localAi.mcpMode, localAi.mcpEnabled);
+  const integrations = normalizeEphemeralMcpIntegrations(localAi.mcpIntegrations);
 
   let connected = false;
   let lastError = null;
@@ -148,16 +153,28 @@ function createLocalAIProvider(localAi) {
   async function generateReply(messages, options = {}) {
     try {
       validateLocalConfig();
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const hasEphemeralIntegrations = mcpMode === MCP_MODE_EPHEMERAL && integrations.length > 0;
+      const endpoint = `${baseUrl}/chat/completions`;
+      const requestBody = buildLocalAIChatCompletionsBody({
+        model: options.model || model,
+        messages,
+        temperature: options.temperature ?? 0.7,
+        maxTokens: options.max_tokens ?? 1000,
+        integrations: hasEphemeralIntegrations ? integrations : [],
+      });
+
+      logLocalAIDebug(logger, {
+        endpoint,
+        integrationsCount: hasEphemeralIntegrations ? integrations.length : 0,
+        mcpEnabled: mcpMode !== MCP_MODE_DISABLED,
+        mcpMode,
+      });
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         signal: options.signal,
         headers: buildLocalAIHeaders({ usePermissionToken, permissionToken }),
-        body: JSON.stringify({
-          model: options.model || model,
-          messages,
-          temperature: options.temperature ?? 0.7,
-          max_tokens: options.max_tokens ?? 1000,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -192,15 +209,106 @@ function createLocalAIProvider(localAi) {
       provider: `local:${provider}`,
       localAi: true,
       mcp: {
-        enabled: parseBooleanFlag(localAi.mcpEnabled),
+        mode: mcpMode,
+        enabled: mcpMode !== MCP_MODE_DISABLED,
         configPath: localAi.mcpConfigPath || '.mcp.json',
-        status: parseBooleanFlag(localAi.mcpEnabled) ? 'configuration_only_tool_loop_not_implemented' : 'disabled',
+        integrations: integrations.map(({ server_label, server_url, allowed_tools }) => ({ server_label, server_url, allowed_tools })),
+        status: getMcpStatus(mcpMode, integrations),
       },
       lastError: lastError?.message ?? null,
     };
   }
 
   return { generateReply, testConnection, getStatus };
+}
+
+
+export function normalizeMcpMode(value, legacyEnabled = false) {
+  const mode = String(value || '').trim().toLowerCase();
+  if (mode === MCP_MODE_EPHEMERAL || mode === 'ephemeral_mcp') return MCP_MODE_EPHEMERAL;
+  if (mode === MCP_MODE_LOCAL_CONFIG || mode === 'local' || mode === 'config') return MCP_MODE_LOCAL_CONFIG;
+  if (mode === MCP_MODE_DISABLED) return MCP_MODE_DISABLED;
+  return parseBooleanFlag(legacyEnabled) ? MCP_MODE_LOCAL_CONFIG : MCP_MODE_DISABLED;
+}
+
+export function normalizeEphemeralMcpIntegrations(value) {
+  const raw = typeof value === 'string' ? parseJsonArray(value) : value;
+  if (!Array.isArray(raw)) return [];
+
+  // Use a Map keyed by label|url to dedupe by server identity and merge tool lists.
+  const mergedMap = new Map();
+
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const serverLabel = String(item.server_label ?? item.serverLabel ?? '').trim();
+    const serverUrl = String(item.server_url ?? item.serverUrl ?? '').trim();
+    const allowedToolsRaw = item.allowed_tools ?? item.allowedTools ?? [];
+    const allowedTools = Array.isArray(allowedToolsRaw)
+      ? allowedToolsRaw.map(tool => String(tool).trim()).filter(Boolean)
+      : String(allowedToolsRaw).split(',').map(tool => tool.trim()).filter(Boolean);
+
+    if (!serverLabel || !serverUrl || allowedTools.length === 0 || !isValidUrl(serverUrl)) continue;
+    const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}`;
+    if (mergedMap.has(key)) {
+      const existing = mergedMap.get(key);
+      const mergedTools = [...new Set([...existing.allowed_tools, ...allowedTools])];
+      mergedMap.set(key, { ...existing, allowed_tools: mergedTools });
+    } else {
+      mergedMap.set(key, {
+        type: 'ephemeral_mcp',
+        server_label: serverLabel,
+        server_url: serverUrl,
+        allowed_tools: [...new Set(allowedTools)],
+      });
+    }
+  }
+
+  return [...mergedMap.values()];
+}
+
+export function buildLocalAIChatCompletionsBody({ model, messages, temperature, maxTokens, integrations = [] }) {
+  const body = {
+    model,
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+  };
+
+  const normalizedIntegrations = normalizeEphemeralMcpIntegrations(integrations);
+  if (normalizedIntegrations.length > 0) {
+    body.integrations = normalizedIntegrations;
+  }
+
+  return body;
+}
+
+function logLocalAIDebug(logger, details) {
+  if (!logger || typeof logger.debug !== 'function') return;
+  logger.debug({ localAi: details }, 'Local AI request prepared');
+}
+
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function isValidUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function getMcpStatus(mode, integrations) {
+  if (mode === MCP_MODE_EPHEMERAL) return integrations.length > 0 ? 'ephemeral_integrations_enabled' : 'ephemeral_empty_fallback';
+  if (mode === MCP_MODE_LOCAL_CONFIG) return 'configuration_only_tool_loop_not_implemented';
+  return 'disabled';
 }
 
 export function buildLocalAIHeaders({ usePermissionToken, permissionToken }) {

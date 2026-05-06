@@ -176,8 +176,9 @@ LOCAL_AI_BASE_URL=http://127.0.0.1:1234/v1
 LOCAL_AI_MODEL=
 LOCAL_AI_USE_PERMISSION_TOKEN=false
 LOCAL_AI_PERMISSION_TOKEN=
-LOCAL_AI_MCP_ENABLED=false
+LOCAL_AI_MCP_MODE=disabled
 LOCAL_AI_MCP_CONFIG_PATH=.mcp.json
+LOCAL_AI_MCP_INTEGRATIONS=[]
 ```
 
 Runtime settings are also available in **System → Global Settings → Local AI / LM Studio**:
@@ -186,7 +187,8 @@ Runtime settings are also available in **System → Global Settings → Local AI
 2. Enable the LM Studio local server on `http://127.0.0.1:1234/v1`.
 3. Enable Local AI in the GUI.
 4. Set the exact model id shown by LM Studio.
-5. Save settings and send a test message.
+5. Choose an MCP Mode if tools are needed.
+6. Save settings and send a test message.
 
 ### LM Studio Permission Token
 
@@ -198,21 +200,95 @@ Authorization: Bearer <LOCAL_AI_PERMISSION_TOKEN>
 
 If the toggle is enabled but the token is empty, the server returns a clear auth error before calling LM Studio. If the toggle is disabled, no `Authorization` header is added. The token is redacted in the GUI and logs must never include it.
 
-### MCP configuration status
+### MCP modes
 
-The GUI stores:
+MCP is **Local AI / LM Studio only**. OpenAI cloud continues to use the OpenAI SDK path and never receives `integrations`.
 
-- `LOCAL_AI_MCP_ENABLED`
-- `LOCAL_AI_MCP_CONFIG_PATH` (default `.mcp.json`)
+| Mode | Behavior |
+|---|---|
+| Disabled | Uses the existing Local AI `/v1/chat/completions` request path. |
+| Local MCP Config (`.mcp.json`) | Keeps the existing local MCP config path behavior for compatibility. |
+| Ephemeral MCP | Uses LM Studio’s OpenAI-compatible `/v1/chat/completions` endpoint and adds ephemeral MCP `integrations` to the request body. |
 
-MCP is intentionally Local AI only. Current support is configuration-ready, not tool-execution-ready. A real MCP tool-call loop still needs:
+#### Local MCP Config mode
 
-1. receive model `tool_calls`
-2. execute the MCP tool
-3. append tool results back to the model context
-4. request the final assistant answer
+Set **MCP Mode → Local MCP Config (.mcp.json)** and provide **MCP config path** such as `.mcp.json`. This preserves the existing configuration flow and does not replace Local AI.
 
-The app logs this as configured but not implemented instead of pretending `.mcp.json` alone makes tools work.
+#### Ephemeral MCP mode
+
+Set **MCP Mode → Ephemeral MCP**, then add one or more integrations in the card-based GUI:
+
+- **MCP Server Label** — e.g. `huggingface`
+- **MCP Server URL** — e.g. `https://huggingface.co/mcp`
+- **Allowed Tools** — comma-separated tools, e.g. `model_search`
+
+The app validates every integration before saving:
+
+- `server_url` must be a valid `http` or `https` URL.
+- `allowed_tools` must contain at least one tool.
+- empty labels, URLs, and tools are rejected.
+- duplicate integrations with the same label and URL are rejected.
+
+When Ephemeral MCP mode has at least one valid integration, Local AI requests go to:
+
+```text
+http://localhost:1234/v1/chat/completions
+```
+
+and include:
+
+```json
+{
+  "integrations": [
+    {
+      "type": "ephemeral_mcp",
+      "server_label": "huggingface",
+      "server_url": "https://huggingface.co/mcp",
+      "allowed_tools": ["model_search"]
+    }
+  ]
+}
+```
+
+If MCP is disabled or the integration list is empty, the app falls back to the existing Local AI request path.
+
+#### Example curl
+
+```bash
+curl http://localhost:1234/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ibm/granite-4-micro",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the top trending model on Hugging Face?"
+      }
+    ],
+    "integrations": [
+      {
+        "type": "ephemeral_mcp",
+        "server_label": "huggingface",
+        "server_url": "https://huggingface.co/mcp",
+        "allowed_tools": ["model_search"]
+      }
+    ]
+  }'
+```
+
+### Why this design
+
+- OpenAI cloud and Local AI remain isolated, preventing Local AI tokens or MCP metadata from leaking to OpenAI.
+- Existing Local AI behavior remains the default fallback, so disabling MCP is non-breaking.
+- Ephemeral integrations are stored as JSON and normalized at the provider boundary for deterministic requests.
+- GUI validation catches unsafe or broken integration data before runtime.
+
+### TODO
+
+- Add a live “test integration” button that calls LM Studio with a short prompt.
+- Surface LM Studio `/v1/chat/completions` response metadata in the admin health view.
+- Add import/export for reusable MCP integration presets.
 
 ## Branding / Visual Settings
 

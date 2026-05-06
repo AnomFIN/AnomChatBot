@@ -37,10 +37,15 @@ export function runMigrations(db) {
     runV6(db);
   }
 
+  // ── v7: Ephemeral MCP global settings ────────────────────────────────
+  if (schemaVersion < 7) {
+    runV7(db);
+  }
+
   // ── update schema version ──────────────────────────────────────────────
   db.prepare(`
     INSERT OR REPLACE INTO _meta (key, value, updated_at)
-    VALUES ('schema_version', '6', datetime('now'))
+    VALUES ('schema_version', '7', datetime('now'))
   `).run();
 }
 
@@ -256,6 +261,11 @@ function runV6(db) {
   seedSettings(db);
 }
 
+function runV7(db) {
+  ensureSettings(db);
+  seedSettings(db);
+}
+
 function ensureSettings(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -339,7 +349,9 @@ function seedSettings(db) {
     ['local_ai_use_permission_token', 'false'],
     ['local_ai_permission_token', ''],
     ['local_ai_mcp_enabled', 'false'],
+    ['local_ai_mcp_mode', 'disabled'],
     ['local_ai_mcp_config_path', '.mcp.json'],
+    ['local_ai_mcp_integrations', '[]'],
     ['branding_top_bar_logo', ''],
     ['branding_chat_background', ''],
   ];
