@@ -2,6 +2,10 @@ import { getConversation, updateConversationSettings } from '../persistence/conv
 import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
 import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, redactSecret } from '../config/index.js';
 
+const MAX_BRANDING_DATA_BYTES = 3 * 1024 * 1024;
+const LOGO_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
+const BACKGROUND_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
 /**
  * Settings API routes.
  *
@@ -67,12 +71,8 @@ export default async function settingsRoutes(fastify, opts) {
       errors.push('MCP config path is required when MCP is enabled');
     }
 
-    // Validate branding data URLs
-    for (const key of ['branding_top_bar_logo', 'branding_chat_background']) {
-      if (body[key] !== undefined && body[key] && !String(body[key]).startsWith('data:image/')) {
-        errors.push(`${key} must be an image data URL`);
-      }
-    }
+    validateBrandingDataUrl(body.branding_top_bar_logo, 'branding_top_bar_logo', LOGO_MIME_TYPES, errors);
+    validateBrandingDataUrl(body.branding_chat_background, 'branding_chat_background', BACKGROUND_MIME_TYPES, errors);
 
     // Validate presence settings
     if (body.presence_typing_speed !== undefined) {
@@ -296,4 +296,31 @@ export default async function settingsRoutes(fastify, opts) {
 
     return { success: true, data: updated };
   });
+}
+
+
+function validateBrandingDataUrl(value, key, allowedMimeTypes, errors) {
+  if (value === undefined || value === '') return;
+  if (typeof value !== 'string') {
+    errors.push(`${key} must be a string data URL`);
+    return;
+  }
+
+  const match = value.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) {
+    errors.push(`${key} must be a base64 image data URL`);
+    return;
+  }
+
+  const [, mimeType, payload] = match;
+  if (!allowedMimeTypes.has(mimeType)) {
+    errors.push(`${key} has unsupported image type`);
+    return;
+  }
+
+  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0;
+  const byteLength = Math.floor((payload.length * 3) / 4) - padding;
+  if (byteLength > MAX_BRANDING_DATA_BYTES) {
+    errors.push(`${key} must be 3MB or smaller`);
+  }
 }

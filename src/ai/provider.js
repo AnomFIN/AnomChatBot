@@ -130,7 +130,7 @@ function createLocalAIProvider(localAi) {
   const provider = localAi.provider || LOCAL_PROVIDER;
   const baseUrl = normalizeBaseUrl(localAi.baseUrl || '');
   const model = localAi.model || '';
-  const usePermissionToken = Boolean(localAi.usePermissionToken);
+  const usePermissionToken = parseBooleanFlag(localAi.usePermissionToken);
   const permissionToken = localAi.permissionToken || '';
 
   let connected = false;
@@ -192,9 +192,9 @@ function createLocalAIProvider(localAi) {
       provider: `local:${provider}`,
       localAi: true,
       mcp: {
-        enabled: Boolean(localAi.mcpEnabled),
+        enabled: parseBooleanFlag(localAi.mcpEnabled),
         configPath: localAi.mcpConfigPath || '.mcp.json',
-        status: localAi.mcpEnabled ? 'configured_without_tool_loop' : 'disabled',
+        status: parseBooleanFlag(localAi.mcpEnabled) ? 'configuration_only_tool_loop_not_implemented' : 'disabled',
       },
       lastError: lastError?.message ?? null,
     };
@@ -209,6 +209,10 @@ export function buildLocalAIHeaders({ usePermissionToken, permissionToken }) {
     headers.Authorization = `Bearer ${permissionToken}`;
   }
   return headers;
+}
+
+function parseBooleanFlag(value) {
+  return value === true || value === 1 || value === '1' || value === 'true' || value === 'yes' || value === 'on';
 }
 
 function normalizeBaseUrl(value) {

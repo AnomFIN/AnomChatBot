@@ -226,7 +226,8 @@ describe('AI Provider — Local AI / LM Studio', () => {
     global.fetch = vi.fn();
   });
 
-  it('does not send Authorization when permission token is disabled', async () => {
+  it('does not send Authorization or instantiate OpenAI SDK when permission token is disabled', async () => {
+    const OpenAI = (await import('openai')).default;
     global.fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ choices: [{ message: { content: 'local ok' } }] }),
@@ -238,7 +239,7 @@ describe('AI Provider — Local AI / LM Studio', () => {
         provider: 'lmstudio',
         baseUrl: 'http://127.0.0.1:1234/v1',
         model: 'local-model',
-        usePermissionToken: false,
+        usePermissionToken: 'false',
         permissionToken: 'secret-token',
       },
     }));
@@ -246,6 +247,7 @@ describe('AI Provider — Local AI / LM Studio', () => {
     const result = await provider.generateReply([{ role: 'user', content: 'Hi' }]);
 
     expect(result.content).toBe('local ok');
+    expect(OpenAI).not.toHaveBeenCalled();
     expect(global.fetch).toHaveBeenCalledWith(
       'http://127.0.0.1:1234/v1/chat/completions',
       expect.objectContaining({
@@ -254,7 +256,7 @@ describe('AI Provider — Local AI / LM Studio', () => {
     );
   });
 
-  it('adds Authorization only for Local AI when permission token is enabled', async () => {
+  it('adds exact Authorization only for Local AI when permission token is enabled', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ choices: [{ message: { content: 'token ok' } }] }),
@@ -282,6 +284,32 @@ describe('AI Provider — Local AI / LM Studio', () => {
         },
       }),
     );
+  });
+
+
+
+  it('does not send Local AI token through the OpenAI cloud SDK path', async () => {
+    vi.clearAllMocks();
+    const OpenAI = (await import('openai')).default;
+    const provider = createAIProvider(makeConfig({
+      openaiApiKey: 'sk-cloud-key',
+      localAi: {
+        enabled: false,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        usePermissionToken: true,
+        permissionToken: 'must-not-leak',
+      },
+    }));
+    const instance = OpenAI.mock.results[0].value;
+    instance.chat.completions.create.mockResolvedValueOnce({ choices: [{ message: { content: 'cloud ok' } }] });
+
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+
+    expect(OpenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'sk-cloud-key' }));
+    expect(OpenAI).not.toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'must-not-leak' }));
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('fails clearly when token toggle is enabled but token is missing', async () => {

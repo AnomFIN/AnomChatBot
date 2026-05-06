@@ -355,11 +355,15 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       aiReply.content = normalizeAssistantContent(aiReply.content, recentMessages);
     } catch (err) {
       if (err.name === 'AbortError' || err.type === 'aborted') {
-        delayManager.complete(conversationId);
+        if (delayManager.isCurrentVersion(conversationId, version)) {
+          delayManager.complete(conversationId);
+        }
         return;
       }
       log('error', `AI error for ${conversationId}: ${err.message}`);
-      delayManager.complete(conversationId);
+      if (delayManager.isCurrentVersion(conversationId, version)) {
+        delayManager.complete(conversationId);
+      }
       emit('bot:activity', { conversationId, state: 'idle' });
       return;
     } finally {
@@ -369,7 +373,6 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     // Version check AGAIN after AI call (more messages may have arrived while waiting for AI)
     if (!delayManager.isCurrentVersion(conversationId, version)) {
       log('info', `Stale AI reply discarded for ${conversationId} (v${version} outdated after AI call)`);
-      delayManager.complete(conversationId);
       return;
     }
 

@@ -61,7 +61,7 @@ async function buildApp() {
   cleanupTestDb();
   initDatabase(TEST_CONFIG);
 
-  fastify = Fastify({ logger: false });
+  fastify = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
   await fastify.register(formbody);
 
   mockAI = createMockAIProvider();
@@ -431,6 +431,64 @@ describe('PUT /api/conversations/:id/settings', () => {
     });
 
     expect(mockIO.emit).toHaveBeenCalledWith('conversation:update', expect.any(Object));
+  });
+});
+
+
+describe('PUT /api/settings — Local AI, MCP, and branding validation', () => {
+  beforeEach(buildApp);
+  afterEach(teardownApp);
+
+  it('accepts Local AI without requiring a permission token when token mode is off', async () => {
+    const res = await fastify.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: {
+        local_ai_enabled: 'true',
+        local_ai_provider: 'lmstudio',
+        local_ai_base_url: 'http://127.0.0.1:1234/v1',
+        local_ai_model: 'local-model',
+        local_ai_use_permission_token: 'false',
+        local_ai_permission_token: '',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects Local AI token mode when the permission token is missing', async () => {
+    const res = await fastify.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: {
+        local_ai_enabled: 'true',
+        local_ai_provider: 'lmstudio',
+        local_ai_base_url: 'http://127.0.0.1:1234/v1',
+        local_ai_model: 'local-model',
+        local_ai_use_permission_token: 'true',
+        local_ai_permission_token: '',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toContain('Permission Token');
+  });
+
+  it('rejects SVG chat backgrounds and branding payloads larger than 3MB', async () => {
+    const svgBackground = `data:image/svg+xml;base64,${Buffer.from('<svg></svg>').toString('base64')}`;
+    const svgRes = await fastify.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: { branding_chat_background: svgBackground },
+    });
+    expect(svgRes.statusCode).toBe(400);
+
+    const tooLargeLogo = `data:image/png;base64,${Buffer.alloc(3 * 1024 * 1024 + 1).toString('base64')}`;
+    const sizeRes = await fastify.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: { branding_top_bar_logo: tooLargeLogo },
+    });
+    expect(sizeRes.statusCode).toBe(400);
+    expect(JSON.parse(sizeRes.body).error).toContain('3MB');
   });
 });
 

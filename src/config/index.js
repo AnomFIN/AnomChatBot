@@ -113,7 +113,7 @@ export function validateConfig(env) {
     errors.push('LOCAL_AI_MCP_CONFIG_PATH must not be empty when LOCAL_AI_MCP_ENABLED=true');
   }
 
-  if (VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey && !localAiEnabled) {
+  if (VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
     warnings.push('OPENAI_API_KEY not set — AI features will not work until configured');
   }
 

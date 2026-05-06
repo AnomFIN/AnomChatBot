@@ -161,6 +161,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
           <div className="gs-section settings-card">
             <h4>MCP</h4>
             <span className="field-hint">MCP is Local AI only. Current implementation stores config and documents the missing tool-call loop.</span>
+            <div className="mcp-status">Configuration only · tool loop not implemented yet</div>
             <label className="toggle-label"><input type="checkbox" checked={isTrue(settings.local_ai_mcp_enabled)} onChange={e => handleChange('local_ai_mcp_enabled', e.target.checked ? 'true' : 'false')} /> Enable MCP</label>
             <label>MCP config path
               <input type="text" value={settings.local_ai_mcp_config_path || '.mcp.json'} onChange={e => handleChange('local_ai_mcp_config_path', e.target.value)} />

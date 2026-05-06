@@ -220,6 +220,12 @@ describe('Config — Local AI / LM Studio', () => {
     expect(result.config.ai.openaiApiKey).toBe('');
   });
 
+  it('keeps OPENAI_API_KEY warning behavior even when Local AI is enabled', () => {
+    const result = validateConfig({ ...BASE_ENV, LOCAL_AI_ENABLED: 'true', LOCAL_AI_MODEL: 'qwen-local' });
+    expect(result.valid).toBe(true);
+    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(true);
+  });
+
   it('rejects unsupported Local AI providers', () => {
     const result = validateConfig({ ...BASE_ENV, LOCAL_AI_PROVIDER: 'ollama' });
     expect(result.valid).toBe(false);

@@ -1342,3 +1342,14 @@ body {
   .gs-form { grid-template-columns: 1fr; }
   .settings-panel { position: absolute; right: 8px; top: 8px; bottom: 8px; z-index: 40; }
 }
+
+.mcp-status {
+  width: fit-content;
+  margin: 10px 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(234, 179, 8, 0.28);
+  border-radius: 999px;
+  background: rgba(234, 179, 8, 0.08);
+  color: var(--yellow);
+  font-size: 12px;
+}
