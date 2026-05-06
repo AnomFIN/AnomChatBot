@@ -58,7 +58,7 @@ async function main() {
   fastify.log.info('Socket.IO initialized');
 
   // ── 5. Initialize AI provider ────────────────────────────────────────────
-  const aiProvider = createAIProvider(config);
+  const aiProvider = createAIProvider({ ...config, logger: fastify.log });
 
   if (config.ai.openaiApiKey) {
     const testResult = await aiProvider.testConnection();

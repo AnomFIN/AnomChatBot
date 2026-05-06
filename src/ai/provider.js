@@ -14,7 +14,7 @@ const MCP_MODE_EPHEMERAL = 'ephemeral';
 export function createAIProvider(config) {
   const localAi = config.ai?.localAi ?? config.localAi ?? {};
   if (localAi.enabled) {
-    return createLocalAIProvider(localAi);
+    return createLocalAIProvider(localAi, config.logger);
   }
   return createOpenAIProvider(config.ai);
 }
@@ -129,7 +129,7 @@ function createOpenAIProvider(aiConfig) {
   return { generateReply, testConnection, getStatus };
 }
 
-function createLocalAIProvider(localAi) {
+function createLocalAIProvider(localAi, logger = null) {
   const provider = localAi.provider || LOCAL_PROVIDER;
   const baseUrl = normalizeBaseUrl(localAi.baseUrl || '');
   const model = localAi.model || '';
@@ -154,31 +154,28 @@ function createLocalAIProvider(localAi) {
     try {
       validateLocalConfig();
       const hasEphemeralIntegrations = mcpMode === MCP_MODE_EPHEMERAL && integrations.length > 0;
-      const response = await fetch(
-        hasEphemeralIntegrations ? buildLmStudioApiChatUrl(baseUrl) : `${baseUrl}/chat/completions`,
-        {
-          method: 'POST',
-          signal: options.signal,
-          headers: buildLocalAIHeaders({ usePermissionToken, permissionToken }),
-          body: JSON.stringify(
-            hasEphemeralIntegrations
-              ? buildLmStudioApiChatBody({
-                model: options.model || model,
-                messages,
-                temperature: options.temperature ?? 0.7,
-                maxTokens: options.max_tokens ?? 1000,
-                integrations,
-                contextLength: options.context_length ?? localAi.contextLength,
-              })
-              : {
-                model: options.model || model,
-                messages,
-                temperature: options.temperature ?? 0.7,
-                max_tokens: options.max_tokens ?? 1000,
-              },
-          ),
-        },
-      );
+      const endpoint = `${baseUrl}/chat/completions`;
+      const requestBody = buildLocalAIChatCompletionsBody({
+        model: options.model || model,
+        messages,
+        temperature: options.temperature ?? 0.7,
+        maxTokens: options.max_tokens ?? 1000,
+        integrations: hasEphemeralIntegrations ? integrations : [],
+      });
+
+      logLocalAIDebug(logger, {
+        endpoint,
+        integrationsCount: hasEphemeralIntegrations ? integrations.length : 0,
+        mcpEnabled: mcpMode !== MCP_MODE_DISABLED,
+        mcpMode,
+      });
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        signal: options.signal,
+        headers: buildLocalAIHeaders({ usePermissionToken, permissionToken }),
+        body: JSON.stringify(requestBody),
+      });
 
       if (!response.ok) {
         throw await createLocalHttpError(response);
@@ -187,7 +184,7 @@ function createLocalAIProvider(localAi) {
       const payload = await response.json();
       connected = true;
       lastError = null;
-      return hasEphemeralIntegrations ? normalizeLocalChatResponse(payload) : normalizeCompletion(payload);
+      return normalizeCompletion(payload);
     } catch (err) {
       if (isAbortError(err)) throw err;
       connected = false;
@@ -265,52 +262,25 @@ export function normalizeEphemeralMcpIntegrations(value) {
   return normalized;
 }
 
-export function buildLmStudioApiChatUrl(baseUrl) {
-  const root = normalizeBaseUrl(baseUrl).replace(/\/v1$/i, '');
-  return `${root}/api/v1/chat`;
-}
-
-export function buildLmStudioApiChatBody({ model, messages, temperature, maxTokens, integrations, contextLength }) {
+export function buildLocalAIChatCompletionsBody({ model, messages, temperature, maxTokens, integrations = [] }) {
   const body = {
     model,
-    input: messagesToInput(messages),
+    messages,
     temperature,
     max_tokens: maxTokens,
-    integrations: normalizeEphemeralMcpIntegrations(integrations),
   };
-  const parsedContextLength = Number(contextLength);
-  if (Number.isInteger(parsedContextLength) && parsedContextLength > 0) {
-    body.context_length = parsedContextLength;
+
+  const normalizedIntegrations = normalizeEphemeralMcpIntegrations(integrations);
+  if (normalizedIntegrations.length > 0) {
+    body.integrations = normalizedIntegrations;
   }
+
   return body;
 }
 
-function messagesToInput(messages) {
-  if (!Array.isArray(messages) || messages.length === 0) return '';
-  return messages.map(message => {
-    const role = typeof message?.role === 'string' ? message.role : 'user';
-    const content = Array.isArray(message?.content)
-      ? stripMultimodalContent([message])[0].content
-      : String(message?.content ?? '');
-    return `${role}: ${content}`;
-  }).join('\n');
-}
-
-function normalizeLocalChatResponse(response) {
-  const content = response.output_text
-    ?? response.output
-    ?? response.response
-    ?? response.choices?.[0]?.message?.content
-    ?? '';
-  const usage = response.usage ?? {};
-  return {
-    content: typeof content === 'string' ? content : JSON.stringify(content),
-    tokenUsage: {
-      prompt: usage.prompt_tokens ?? usage.input_tokens ?? 0,
-      completion: usage.completion_tokens ?? usage.output_tokens ?? 0,
-      total: usage.total_tokens ?? 0,
-    },
-  };
+function logLocalAIDebug(logger, details) {
+  if (!logger || typeof logger.debug !== 'function') return;
+  logger.debug({ localAi: details }, 'Local AI request prepared');
 }
 
 function parseJsonArray(value) {

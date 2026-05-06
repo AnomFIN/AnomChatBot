@@ -208,7 +208,7 @@ MCP is **Local AI / LM Studio only**. OpenAI cloud continues to use the OpenAI S
 |---|---|
 | Disabled | Uses the existing Local AI `/v1/chat/completions` request path. |
 | Local MCP Config (`.mcp.json`) | Keeps the existing local MCP config path behavior for compatibility. |
-| Ephemeral MCP | Uses LM Studio’s modern `/api/v1/chat` endpoint and serializes ephemeral MCP integrations into the request body. |
+| Ephemeral MCP | Uses LM Studio’s OpenAI-compatible `/v1/chat/completions` endpoint and adds ephemeral MCP `integrations` to the request body. |
 
 #### Local MCP Config mode
 
@@ -232,7 +232,7 @@ The app validates every integration before saving:
 When Ephemeral MCP mode has at least one valid integration, Local AI requests go to:
 
 ```text
-http://localhost:1234/api/v1/chat
+http://localhost:1234/v1/chat/completions
 ```
 
 and include:
@@ -255,12 +255,17 @@ If MCP is disabled or the integration list is empty, the app falls back to the e
 #### Example curl
 
 ```bash
-curl http://localhost:1234/api/v1/chat \
+curl http://localhost:1234/v1/chat/completions \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "ibm/granite-4-micro",
-    "input": "What is the top trending model on Hugging Face?",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the top trending model on Hugging Face?"
+      }
+    ],
     "integrations": [
       {
         "type": "ephemeral_mcp",
@@ -268,8 +273,7 @@ curl http://localhost:1234/api/v1/chat \
         "server_url": "https://huggingface.co/mcp",
         "allowed_tools": ["model_search"]
       }
-    ],
-    "context_length": 8000
+    ]
   }'
 ```
 
@@ -283,7 +287,7 @@ curl http://localhost:1234/api/v1/chat \
 ### TODO
 
 - Add a live “test integration” button that calls LM Studio with a short prompt.
-- Surface LM Studio `/api/v1/chat` response metadata in the admin health view.
+- Surface LM Studio `/v1/chat/completions` response metadata in the admin health view.
 - Add import/export for reusable MCP integration presets.
 
 ## Branding / Visual Settings

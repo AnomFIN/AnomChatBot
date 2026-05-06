@@ -145,7 +145,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       if (conversationProviders.has(cacheKey)) return conversationProviders.get(cacheKey);
 
       try {
-        const provider = createAIProvider({ ai: { ...config.ai, localAi } });
+        const provider = createAIProvider({ ai: { ...config.ai, localAi }, logger });
         conversationProviders.set(cacheKey, provider);
         log('info', `Created global Local AI provider: ${localAi.provider}|${localAi.baseUrl}|${localAi.model}`);
         if (localAi.mcpMode === 'local_config') {

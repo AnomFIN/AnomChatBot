@@ -329,10 +329,10 @@ describe('AI Provider — Local AI / LM Studio', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('uses LM Studio /api/v1/chat with integrations for Ephemeral MCP mode', async () => {
+  it('keeps LM Studio /v1/chat/completions and adds integrations for Ephemeral MCP mode', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ output_text: 'ephemeral ok', usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 } }),
+      json: async () => ({ choices: [{ message: { content: 'ephemeral ok' } }], usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 } }),
     });
 
     const provider = createAIProvider(makeConfig({
@@ -350,7 +350,6 @@ describe('AI Provider — Local AI / LM Studio', () => {
           server_url: 'https://huggingface.co/mcp',
           allowed_tools: ['model_search'],
         }],
-        contextLength: 8000,
       },
     }));
 
@@ -359,12 +358,11 @@ describe('AI Provider — Local AI / LM Studio', () => {
     const body = JSON.parse(request.body);
 
     expect(result.content).toBe('ephemeral ok');
-    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/api/v1/chat', expect.any(Object));
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/v1/chat/completions', expect.any(Object));
     expect(request.headers.Authorization).toBe('Bearer lmstudio-token');
     expect(body).toMatchObject({
       model: 'ibm/granite-4-micro',
-      input: 'user: Top model?',
-      context_length: 8000,
+      messages: [{ role: 'user', content: 'Top model?' }],
       integrations: [{
         type: 'ephemeral_mcp',
         server_label: 'huggingface',
@@ -372,6 +370,51 @@ describe('AI Provider — Local AI / LM Studio', () => {
         allowed_tools: ['model_search'],
       }],
     });
+  });
+
+
+  it('logs Local AI request debug metadata without leaking permission tokens', async () => {
+    const logger = { debug: vi.fn() };
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'debug ok' } }] }),
+    });
+
+    const provider = createAIProvider({
+      ...makeConfig({
+        localAi: {
+          enabled: true,
+          provider: 'lmstudio',
+          baseUrl: 'http://127.0.0.1:1234/v1',
+          model: 'local-model',
+          usePermissionToken: true,
+          permissionToken: 'must-not-log',
+          mcpMode: 'ephemeral',
+          mcpIntegrations: [{
+            type: 'ephemeral_mcp',
+            server_label: 'huggingface',
+            server_url: 'https://huggingface.co/mcp',
+            allowed_tools: ['model_search'],
+          }],
+        },
+      }),
+      logger,
+    });
+
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+
+    expect(logger.debug).toHaveBeenCalledWith(
+      {
+        localAi: {
+          endpoint: 'http://127.0.0.1:1234/v1/chat/completions',
+          integrationsCount: 1,
+          mcpEnabled: true,
+          mcpMode: 'ephemeral',
+        },
+      },
+      'Local AI request prepared',
+    );
+    expect(JSON.stringify(logger.debug.mock.calls)).not.toContain('must-not-log');
   });
 
   it('falls back to existing Local AI path when Ephemeral MCP has no integrations', async () => {

@@ -236,7 +236,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
 
               {mcpMode === 'ephemeral' && (
                 <div className="mcp-integrations-ui">
-                  <div className="mcp-status mcp-status-live">LM Studio /api/v1/chat integrations</div>
+                  <div className="mcp-status mcp-status-live">LM Studio /v1/chat/completions integrations</div>
                   <div className="mcp-integration-form">
                     <label>MCP Server Label
                       <input type="text" value={integrationForm.server_label} placeholder="huggingface" onChange={e => handleIntegrationFormChange('server_label', e.target.value)} />
