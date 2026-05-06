@@ -30,7 +30,9 @@ function Dashboard() {
   const selectedConversation = conversations.find(c => c.id === selectedId) || null;
 
   // Load branding on mount and whenever the System tab is visited (in case it changed)
-  const loadBranding = () => getBranding().then(setBranding).catch(() => {});
+  const loadBranding = () => getBranding().then(setBranding).catch(err => {
+    console.warn('Failed to load branding:', err.message);
+  });
   useEffect(() => { loadBranding(); }, []);
   useEffect(() => { if (activeTab === 'chat') loadBranding(); }, [activeTab]);
 
@@ -61,9 +63,13 @@ function Dashboard() {
     if (!existed) refresh();
   };
 
+  // Only allow server-relative branding URLs to prevent XSS via javascript: URIs
+  const safeLogoUrl = branding.logo_url?.startsWith('/branding/') ? branding.logo_url : null;
+  const safeBgUrl = branding.background_url?.startsWith('/branding/') ? branding.background_url : null;
+
   return (
     <div className="app-container">
-      <StatusBar status={status} botActivities={botActivities} logoUrl={branding.logo_url} />
+      <StatusBar status={status} botActivities={botActivities} logoUrl={safeLogoUrl} />
 
       <div className="app-nav">
         <button className={activeTab === 'chat' ? 'active' : ''} onClick={() => setActiveTab('chat')}>
@@ -107,7 +113,7 @@ function Dashboard() {
                 conversationId={selectedId}
                 conversation={selectedConversation}
                 botActivity={botActivities[selectedId]}
-                backgroundUrl={branding.background_url}
+                backgroundUrl={safeBgUrl}
               />
               {selectedId && (
                 <button

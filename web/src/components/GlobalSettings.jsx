@@ -47,7 +47,9 @@ export default function GlobalSettings({ status }) {
     try {
       const data = await getBranding();
       setBranding(data);
-    } catch {}
+    } catch (err) {
+      console.warn('Failed to load branding settings:', err.message);
+    }
   };
 
   const handleChange = (key, value) => {
@@ -143,8 +145,15 @@ export default function GlobalSettings({ status }) {
 
   if (!status) return <div className="global-settings">Loading…</div>;
 
-  const currentLogoUrl = logoPreview || branding.logo_url;
-  const currentBgUrl = bgPreview || branding.background_url;
+  // Only allow safe URLs (blob: from createObjectURL, or server-relative /branding/... paths)
+  const safeBrandingUrl = (url) => {
+    if (!url) return null;
+    if (url.startsWith('blob:') || url.startsWith('/branding/')) return url;
+    return null;
+  };
+
+  const currentLogoUrl = safeBrandingUrl(logoPreview || branding.logo_url);
+  const currentBgUrl = safeBrandingUrl(bgPreview || branding.background_url);
 
   return (
     <div className="global-settings">

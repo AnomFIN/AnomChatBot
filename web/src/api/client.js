@@ -123,6 +123,9 @@ export function uploadBrandingBackground(file) {
 export function resetBrandingBackground() {
   return request('/settings/branding/background', { method: 'DELETE' }).then(d => d.data);
 }
+
+// ── Global settings ──────────────────────────────────────────────────────
+export function getGlobalSettings() {
   return request('/settings').then(d => d.data);
 }
 

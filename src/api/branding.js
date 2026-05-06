@@ -1,6 +1,5 @@
 import { createWriteStream, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join, extname } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import { setSettingsBulk, getAllSettings } from '../persistence/settings.js';
 
 const BRANDING_DIR = join(process.cwd(), 'data', 'branding');
@@ -16,6 +15,23 @@ const TYPE_EXTS = {
   'image/webp': '.webp',
   'image/svg+xml': '.svg',
 };
+
+// Simple in-memory rate limiter: max 10 requests per IP per minute
+const _rateLimitMap = new Map();
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+function _checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = _rateLimitMap.get(ip) ?? { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+  if (now > entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + RATE_LIMIT_WINDOW_MS;
+  }
+  entry.count += 1;
+  _rateLimitMap.set(ip, entry);
+  return entry.count <= RATE_LIMIT_MAX;
+}
 
 function ensureBrandingDir() {
   mkdirSync(BRANDING_DIR, { recursive: true });
@@ -45,21 +61,37 @@ export default async function brandingRoutes(fastify, _opts) {
 
   // ── Upload logo ───────────────────────────────────────────────────────
   fastify.post('/api/settings/branding/logo', async (request, reply) => {
+    if (!_checkRateLimit(request.ip)) {
+      reply.code(429);
+      return { success: false, error: 'Too many requests. Please wait before uploading again.' };
+    }
     return _handleUpload(request, reply, 'logo', LOGO_TYPES, 'branding_logo_path');
   });
 
   // ── Reset logo ────────────────────────────────────────────────────────
-  fastify.delete('/api/settings/branding/logo', async () => {
+  fastify.delete('/api/settings/branding/logo', async (request, reply) => {
+    if (!_checkRateLimit(request.ip)) {
+      reply.code(429);
+      return { success: false, error: 'Too many requests.' };
+    }
     return _handleReset('branding_logo_path');
   });
 
   // ── Upload background ─────────────────────────────────────────────────
   fastify.post('/api/settings/branding/background', async (request, reply) => {
+    if (!_checkRateLimit(request.ip)) {
+      reply.code(429);
+      return { success: false, error: 'Too many requests. Please wait before uploading again.' };
+    }
     return _handleUpload(request, reply, 'bg', BG_TYPES, 'branding_bg_path');
   });
 
   // ── Reset background ──────────────────────────────────────────────────
-  fastify.delete('/api/settings/branding/background', async () => {
+  fastify.delete('/api/settings/branding/background', async (request, reply) => {
+    if (!_checkRateLimit(request.ip)) {
+      reply.code(429);
+      return { success: false, error: 'Too many requests.' };
+    }
     return _handleReset('branding_bg_path');
   });
 }
