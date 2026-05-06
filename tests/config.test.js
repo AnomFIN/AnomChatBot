@@ -215,9 +215,41 @@ describe('Config — Local AI / LM Studio', () => {
       model: 'qwen-local',
       usePermissionToken: false,
       mcpEnabled: false,
+      mcpMode: 'disabled',
       mcpConfigPath: '.mcp.json',
+      mcpIntegrations: '[]',
     });
     expect(result.config.ai.openaiApiKey).toBe('');
+  });
+
+
+  it('supports Ephemeral MCP integration env JSON for Local AI', () => {
+    const integrations = JSON.stringify([{ server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['model_search'] }]);
+    const result = validateConfig({
+      ...BASE_ENV,
+      LOCAL_AI_ENABLED: 'true',
+      LOCAL_AI_MODEL: 'qwen-local',
+      LOCAL_AI_MCP_MODE: 'ephemeral',
+      LOCAL_AI_MCP_INTEGRATIONS: integrations,
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.config.ai.localAi.mcpEnabled).toBe(true);
+    expect(result.config.ai.localAi.mcpMode).toBe('ephemeral');
+    expect(result.config.ai.localAi.mcpIntegrations).toBe(integrations);
+  });
+
+  it('rejects malformed Ephemeral MCP env JSON', () => {
+    const result = validateConfig({
+      ...BASE_ENV,
+      LOCAL_AI_ENABLED: 'true',
+      LOCAL_AI_MODEL: 'qwen-local',
+      LOCAL_AI_MCP_MODE: 'ephemeral',
+      LOCAL_AI_MCP_INTEGRATIONS: '{bad',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('LOCAL_AI_MCP_INTEGRATIONS'))).toBe(true);
   });
 
   it('keeps OPENAI_API_KEY warning behavior even when Local AI is enabled', () => {

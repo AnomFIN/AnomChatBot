@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createAIProvider } from '../src/ai/provider.js';
+import { createAIProvider, serializeMessagesForLmStudioInput } from '../src/ai/provider.js';
 
 // Mock the OpenAI module
 vi.mock('openai', () => {
@@ -328,4 +328,136 @@ describe('AI Provider — Local AI / LM Studio', () => {
       .rejects.toMatchObject({ type: 'auth_error' });
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it('uses LM Studio /api/v1/chat with input and integrations for Ephemeral MCP mode', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ output_text: 'ephemeral ok', usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 } }),
+    });
+
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'ibm/granite-4-micro',
+        usePermissionToken: true,
+        permissionToken: 'lmstudio-token',
+        mcpMode: 'ephemeral',
+        mcpIntegrations: [{
+          type: 'ephemeral_mcp',
+          server_label: 'huggingface',
+          server_url: 'https://huggingface.co/mcp',
+          allowed_tools: ['model_search'],
+        }],
+      },
+    }));
+
+    const result = await provider.generateReply([
+      { role: 'system', content: 'You are a helpful assistant.' },
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi!' },
+      { role: 'user', content: 'Top model?' },
+    ]);
+    const [, request] = global.fetch.mock.calls[0];
+    const body = JSON.parse(request.body);
+
+    expect(result.content).toBe('ephemeral ok');
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/api/v1/chat', expect.any(Object));
+    expect(request.headers.Authorization).toBe('Bearer lmstudio-token');
+    expect(body.messages).toBeUndefined();
+    expect(body).toMatchObject({
+      model: 'ibm/granite-4-micro',
+      input: 'System:\nYou are a helpful assistant.\n\nConversation:\nUser: Hello\nAssistant: Hi!\nUser: Top model?',
+      integrations: [{
+        type: 'ephemeral_mcp',
+        server_label: 'huggingface',
+        server_url: 'https://huggingface.co/mcp',
+        allowed_tools: ['model_search'],
+      }],
+    });
+  });
+
+
+  it('serializes system, user, and assistant history into LM Studio input', () => {
+    expect(serializeMessagesForLmStudioInput([
+      { role: 'system', content: 'You are a helpful assistant.' },
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi!' },
+      { role: 'user', content: 'What are trending models on Hugging Face?' },
+    ])).toBe(`System:
+You are a helpful assistant.
+
+Conversation:
+User: Hello
+Assistant: Hi!
+User: What are trending models on Hugging Face?`);
+  });
+
+
+  it('logs Local AI request debug metadata without leaking permission tokens', async () => {
+    const logger = { debug: vi.fn() };
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'debug ok' } }] }),
+    });
+
+    const provider = createAIProvider({
+      ...makeConfig({
+        localAi: {
+          enabled: true,
+          provider: 'lmstudio',
+          baseUrl: 'http://127.0.0.1:1234/v1',
+          model: 'local-model',
+          usePermissionToken: true,
+          permissionToken: 'must-not-log',
+          mcpMode: 'ephemeral',
+          mcpIntegrations: [{
+            type: 'ephemeral_mcp',
+            server_label: 'huggingface',
+            server_url: 'https://huggingface.co/mcp',
+            allowed_tools: ['model_search'],
+          }],
+        },
+      }),
+      logger,
+    });
+
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+
+    expect(logger.debug).toHaveBeenCalledWith(
+      {
+        localAi: {
+          endpoint: 'http://127.0.0.1:1234/api/v1/chat',
+          usesLmStudioApi: true,
+          mcpMode: 'ephemeral',
+          integrationsCount: 1,
+        },
+      },
+      'Local AI request prepared',
+    );
+    expect(JSON.stringify(logger.debug.mock.calls)).not.toContain('must-not-log');
+  });
+
+  it('uses existing Local AI path when MCP is not Ephemeral MCP', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'fallback ok' } }] }),
+    });
+
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        usePermissionToken: false,
+        mcpMode: 'local_config',
+      },
+    }));
+
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/v1/chat/completions', expect.any(Object));
+  });
+
 });
