@@ -1,10 +1,15 @@
 // Security-first. Creator-ready. Future-proof.
 import OpenAI from 'openai';
+import { buildMcpRoutingInstruction, selectEphemeralMcpIntegrations } from '../core/mcpIntegrations.js';
 
 const LOCAL_PROVIDER = 'lmstudio';
 const MCP_MODE_DISABLED = 'disabled';
 const MCP_MODE_LOCAL_CONFIG = 'local_config';
 const MCP_MODE_EPHEMERAL = 'ephemeral';
+const LOCAL_AI_QUALITY_INSTRUCTION = 'Vastaa selkeällä, luonnollisella suomen kielellä. Älä keksi tietoja. Jos et tiedä, sano ettet tiedä. Älä toista samoja lauseita. Älä käytä rikkinäisiä ilmauksia. Älä täytä vastausta turhalla jaarittelulla. Jos lähdettä ei ole, sano se suoraan.';
+const MCP_MAX_OUTPUT_TOKENS = 300;
+const LOCAL_AI_DEFAULT_MAX_TOKENS = 300;
+const LOCAL_AI_DEFAULT_TEMPERATURE = 0.35;
 
 /**
  * Create an AI provider backed by OpenAI cloud or Local AI / LM Studio.
@@ -153,26 +158,29 @@ function createLocalAIProvider(localAi, logger = null) {
   async function generateReply(messages, options = {}) {
     try {
       validateLocalConfig();
-      const usesLmStudioApi = mcpMode === MCP_MODE_EPHEMERAL;
+      const isEphemeralMcp = mcpMode === MCP_MODE_EPHEMERAL;
+      const selectedIntegrations = isEphemeralMcp ? selectEphemeralMcpIntegrations(integrations, messages) : [];
+      const usesLmStudioApi = isEphemeralMcp && selectedIntegrations.length > 0;
       const endpoint = usesLmStudioApi ? buildLmStudioApiChatUrl(baseUrl) : `${baseUrl}/chat/completions`;
       const requestBody = usesLmStudioApi
         ? buildLmStudioApiChatBody({
           model: options.model || model,
           messages,
-          integrations,
+          integrations: selectedIntegrations,
+          maxTokens: Math.min(options.max_tokens ?? MCP_MAX_OUTPUT_TOKENS, MCP_MAX_OUTPUT_TOKENS),
         })
         : buildLocalAIChatCompletionsBody({
           model: options.model || model,
-          messages,
-          temperature: options.temperature ?? 0.7,
-          maxTokens: options.max_tokens ?? 1000,
+          messages: addLocalAIQualityInstruction(messages),
+          temperature: options.temperature ?? LOCAL_AI_DEFAULT_TEMPERATURE,
+          maxTokens: Math.min(options.max_tokens ?? LOCAL_AI_DEFAULT_MAX_TOKENS, LOCAL_AI_DEFAULT_MAX_TOKENS),
         });
 
       logLocalAIDebug(logger, {
         endpoint,
         usesLmStudioApi,
         mcpMode,
-        integrationsCount: usesLmStudioApi ? integrations.length : 0,
+        integrationsCount: usesLmStudioApi ? selectedIntegrations.length : 0,
       });
 
       const response = await fetch(endpoint, {
@@ -291,17 +299,23 @@ export function buildLmStudioApiChatUrl(baseUrl) {
   }
 }
 
-export function buildLmStudioApiChatBody({ model, messages, integrations }) {
+export function buildLmStudioApiChatBody({ model, messages, integrations, maxTokens = MCP_MAX_OUTPUT_TOKENS }) {
+  const normalizedIntegrations = normalizeEphemeralMcpIntegrations(integrations);
   return {
     model,
-    input: serializeMessagesForLmStudioInput(messages),
-    integrations: normalizeEphemeralMcpIntegrations(integrations),
+    input: serializeMessagesForLmStudioInput(messages, {
+      maxChars: 6000,
+      extraInstruction: buildMcpRoutingInstruction(normalizedIntegrations, messages),
+    }),
+    integrations: normalizedIntegrations,
+    max_tokens: Math.min(maxTokens, MCP_MAX_OUTPUT_TOKENS),
   };
 }
 
-export function serializeMessagesForLmStudioInput(messages) {
-  if (!Array.isArray(messages) || messages.length === 0) return '';
+export function serializeMessagesForLmStudioInput(messages, options = {}) {
+  if (!Array.isArray(messages) || messages.length === 0) return options.extraInstruction || '';
 
+  const maxChars = Number.isInteger(options.maxChars) ? options.maxChars : Infinity;
   const systemParts = [];
   const conversationParts = [];
 
@@ -311,17 +325,32 @@ export function serializeMessagesForLmStudioInput(messages) {
     if (!content) continue;
 
     if (role === 'system') {
-      systemParts.push(content);
+      systemParts.push(stripRawToolJson(content));
       continue;
     }
 
-    conversationParts.push(`${formatConversationRole(role)}: ${content}`);
+    if (role === 'tool') continue;
+    const cleanContent = stripRawToolJson(content);
+    if (!cleanContent) continue;
+    conversationParts.push(`${formatConversationRole(role)}: ${cleanContent}`);
   }
 
+  if (options.extraInstruction) systemParts.unshift(options.extraInstruction);
   const sections = [];
   if (systemParts.length > 0) sections.push(`System:\n${systemParts.join('\n')}`);
   if (conversationParts.length > 0) sections.push(`Conversation:\n${conversationParts.join('\n')}`);
-  return sections.join('\n\n');
+  const serialized = sections.join('\n\n');
+  return serialized.length > maxChars ? serialized.slice(-maxChars).trimStart() : serialized;
+}
+
+function addLocalAIQualityInstruction(messages) {
+  if (!Array.isArray(messages)) return [{ role: 'system', content: LOCAL_AI_QUALITY_INSTRUCTION }];
+  return [{ role: 'system', content: LOCAL_AI_QUALITY_INSTRUCTION }, ...messages];
+}
+
+function stripRawToolJson(content) {
+  const normalized = normalizeLmStudioMessageContent(content, { toolFallback: '' });
+  return normalized === EMPTY_RESPONSE_FALLBACK ? '' : normalized;
 }
 
 function serializeMessageContent(content) {
@@ -338,21 +367,98 @@ function formatConversationRole(role) {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
-function normalizeLmStudioApiChatResponse(response) {
-  const content = response.output_text
-    ?? response.output
-    ?? response.response
-    ?? response.choices?.[0]?.message?.content
-    ?? '';
-  const usage = response.usage ?? {};
+const EMPTY_RESPONSE_FALLBACK = 'En saanut muodostettua kunnollista vastausta. Kokeillaan uudelleen tarkemmalla kysymyksellä.';
+const TOOL_ONLY_RESPONSE_FALLBACK = 'Haku ei tuottanut suoraa vastausta. Kokeile tarkentaa hakua.';
+
+export function normalizeLmStudioApiChatResponse(response) {
+  const content = normalizeLmStudioMessageContent(response);
+  const usage = response?.usage ?? {};
   return {
-    content: typeof content === 'string' ? content : JSON.stringify(content),
+    content,
     tokenUsage: {
       prompt: usage.prompt_tokens ?? usage.input_tokens ?? 0,
       completion: usage.completion_tokens ?? usage.output_tokens ?? 0,
       total: usage.total_tokens ?? 0,
     },
   };
+}
+
+export function normalizeLmStudioMessageContent(response, { toolFallback = TOOL_ONLY_RESPONSE_FALLBACK } = {}) {
+  const direct = extractDirectMessageContent(response);
+  if (direct) return direct;
+
+  const output = response?.output ?? response;
+  const fromOutput = extractOutputContent(output, toolFallback);
+  if (fromOutput) return fromOutput;
+
+  if (typeof response === 'string') {
+    const parsed = parseJsonSafely(response);
+    if (parsed !== null) return normalizeLmStudioMessageContent(parsed, { toolFallback });
+    return response.trim() || EMPTY_RESPONSE_FALLBACK;
+  }
+
+  return EMPTY_RESPONSE_FALLBACK;
+}
+
+function extractDirectMessageContent(response) {
+  const candidates = [
+    response?.output_text,
+    response?.message?.content,
+    response?.choices?.[0]?.message?.content,
+    response?.response,
+  ];
+  for (const candidate of candidates) {
+    const content = normalizeContentCandidate(candidate);
+    if (content) return content;
+  }
+  return '';
+}
+
+function extractOutputContent(output, toolFallback) {
+  if (Array.isArray(output)) {
+    const messages = output
+      .filter(item => item?.type === 'message')
+      .map(item => normalizeContentCandidate(item.content))
+      .filter(Boolean);
+    if (messages.length > 0) return messages.join('\n').trim();
+    const hadToolCalls = output.some(item => item?.type === 'tool_call' || item?.type === 'invalid_tool_call');
+    return hadToolCalls ? toolFallback : '';
+  }
+  return normalizeContentCandidate(output);
+}
+
+function normalizeContentCandidate(candidate) {
+  if (candidate === undefined || candidate === null) return '';
+  if (Array.isArray(candidate)) return extractOutputContent(candidate, '');
+  if (typeof candidate === 'object' && candidate !== null) {
+    if (candidate.type === 'message') return normalizeContentCandidate(candidate.content);
+    if (candidate.message?.content !== undefined) return normalizeContentCandidate(candidate.message.content);
+    if (candidate.content !== undefined && candidate.type !== 'tool_call' && candidate.type !== 'invalid_tool_call') return normalizeContentCandidate(candidate.content);
+    return '';
+  }
+  const text = String(candidate).trim();
+  if (!text) return '';
+  const parsed = parseJsonSafely(text);
+  if (parsed !== null) {
+    const parsedContent = normalizeLmStudioMessageContent(parsed, { toolFallback: '' });
+    return parsedContent === EMPTY_RESPONSE_FALLBACK ? '' : parsedContent;
+  }
+  return looksLikeRawToolJson(text) ? '' : text;
+}
+
+function parseJsonSafely(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || !['[', '{'].includes(trimmed[0])) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeRawToolJson(value) {
+  return /^\[?\{\s*"type"\s*:\s*"(?:tool_call|invalid_tool_call|message)"/.test(value.trim());
 }
 
 function logLocalAIDebug(logger, details) {

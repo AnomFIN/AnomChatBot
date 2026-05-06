@@ -13,6 +13,13 @@ const MCP_MODES = [
 ];
 
 const EMPTY_INTEGRATION_FORM = { server_label: '', server_url: '', allowed_tools: '' };
+const DEFAULT_LOCAL_AI_BASE_URL = 'http://10.5.0.2:1234/v1';
+const DEFAULT_LOCAL_AI_MODEL = 'qwen3-coder-next';
+const DEFAULT_WEB_SEARCH_PROVIDER = 'brave';
+const DEFAULT_INTEGRATIONS = [
+  { type: 'ephemeral_mcp', server_label: 'brave-search', server_url: 'http://10.5.0.2:8000/mcp', allowed_tools: ['brave_web_search', 'brave_local_search', 'brave_news_search'] },
+  { type: 'ephemeral_mcp', server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['hub_repo_search', 'hub_repo_details', 'paper_search', 'hf_doc_search', 'hf_doc_fetch'] },
+];
 
 export default function GlobalSettings({ status, onBrandingChange }) {
   const [settings, setSettings] = useState(null);
@@ -177,6 +184,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const localAiEnabled = isTrue(settings?.local_ai_enabled);
   const mcpMode = settings?.local_ai_mcp_mode || (isTrue(settings?.local_ai_mcp_enabled) ? 'local_config' : 'disabled');
   const integrations = parseIntegrations(settings?.local_ai_mcp_integrations);
+  const defaultWebProvider = settings?.default_web_search_provider || DEFAULT_WEB_SEARCH_PROVIDER;
 
   return (
     <div className="global-settings">
@@ -236,7 +244,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
 
           <div className="gs-section settings-card">
             <h4>Local AI / LM Studio</h4>
-            <span className="field-hint">Uses OpenAI-compatible endpoint /v1/chat/completions.</span>
+            <span className="field-hint">Uses OpenAI-compatible endpoint /v1/chat/completions. Default Local AI is ON for LM Studio.</span>
             <label className="toggle-label"><input type="checkbox" checked={localAiEnabled} onChange={e => handleChange('local_ai_enabled', e.target.checked ? 'true' : 'false')} /> Enable Local AI</label>
             <label>Local AI Provider
               <select value={settings.local_ai_provider || 'lmstudio'} onChange={e => handleChange('local_ai_provider', e.target.value)}>
@@ -244,10 +252,10 @@ export default function GlobalSettings({ status, onBrandingChange }) {
               </select>
             </label>
             <label>Local AI Base URL
-              <input type="text" value={settings.local_ai_base_url || 'http://127.0.0.1:1234/v1'} onChange={e => handleChange('local_ai_base_url', e.target.value)} />
+              <input type="text" value={settings.local_ai_base_url || DEFAULT_LOCAL_AI_BASE_URL} onChange={e => handleChange('local_ai_base_url', e.target.value)} />
             </label>
             <label>Local AI Model
-              <input type="text" value={settings.local_ai_model || ''} placeholder="Loaded LM Studio model id" onChange={e => handleChange('local_ai_model', e.target.value)} />
+              <input type="text" value={settings.local_ai_model || DEFAULT_LOCAL_AI_MODEL} placeholder="Loaded LM Studio model id" onChange={e => handleChange('local_ai_model', e.target.value)} />
             </label>
             <label className="toggle-label"><input type="checkbox" checked={isTrue(settings.local_ai_use_permission_token)} onChange={e => handleChange('local_ai_use_permission_token', e.target.checked ? 'true' : 'false')} /> Use LM Studio Permission Token</label>
             <label>LM Studio Permission Token
@@ -259,6 +267,15 @@ export default function GlobalSettings({ status, onBrandingChange }) {
             <div className="gs-section settings-card mcp-card">
               <h4>MCP Mode</h4>
               <span className="field-hint">MCP is Local AI / LM Studio only. OpenAI cloud never receives integrations.</span>
+              <label>Default Web Search Provider
+                <select value={defaultWebProvider} onChange={e => handleChange('default_web_search_provider', e.target.value)}>
+                  <option value="brave">Brave</option>
+                  <option value="duckduckgo">DuckDuckGo</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </label>
+              <span className="field-hint">General web search handles news, companies, sports, current events and websites.</span>
+              <span className="field-hint">HuggingFace integration is only for AI-related resources.</span>
               <label>MCP Mode
                 <select value={mcpMode} onChange={e => handleMcpModeChange(e.target.value)}>
                   {MCP_MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -276,7 +293,8 @@ export default function GlobalSettings({ status, onBrandingChange }) {
 
               {mcpMode === 'ephemeral' && (
                 <div className="mcp-integrations-ui">
-                  <div className="mcp-status mcp-status-live">Uses LM Studio API endpoint /api/v1/chat with input + integrations.</div>
+                  <div className="mcp-status mcp-status-live">Uses LM Studio API endpoint /api/v1/chat with input + routed integrations.</div>
+                  <div className="field-hint">HuggingFace MCP is for AI models, datasets, Spaces, papers and HF docs only. It is not a general web search.</div>
                   <div className="mcp-integration-form">
                     <label>MCP Server Label
                       <input type="text" value={integrationForm.server_label} placeholder="huggingface" onChange={e => handleIntegrationFormChange('server_label', e.target.value)} />
@@ -285,7 +303,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
                       <input type="url" value={integrationForm.server_url} placeholder="https://huggingface.co/mcp" onChange={e => handleIntegrationFormChange('server_url', e.target.value)} />
                     </label>
                     <label>Allowed Tools
-                      <input type="text" value={integrationForm.allowed_tools} placeholder="model_search, dataset_search" onChange={e => handleIntegrationFormChange('allowed_tools', e.target.value)} />
+                      <input type="text" value={integrationForm.allowed_tools} placeholder="brave_web_search, brave_news_search" onChange={e => handleIntegrationFormChange('allowed_tools', e.target.value)} />
                     </label>
                     <button type="button" className="secondary-btn" onClick={handleAddIntegration}>Add Integration</button>
                   </div>
@@ -368,10 +386,17 @@ function InfoCard({ title, rows }) {
 }
 
 function hydrateSettings(data) {
+  const integrations = parseIntegrations(data.local_ai_mcp_integrations);
   return {
     ...data,
-    local_ai_mcp_mode: data.local_ai_mcp_mode || (isTrue(data.local_ai_mcp_enabled) ? 'local_config' : 'disabled'),
-    local_ai_mcp_integrations: JSON.stringify(parseIntegrations(data.local_ai_mcp_integrations)),
+    local_ai_enabled: data.local_ai_enabled ?? 'true',
+    local_ai_base_url: data.local_ai_base_url || DEFAULT_LOCAL_AI_BASE_URL,
+    local_ai_model: data.local_ai_model || DEFAULT_LOCAL_AI_MODEL,
+    local_ai_mcp_mode: data.local_ai_mcp_mode || (isTrue(data.local_ai_mcp_enabled) ? 'ephemeral' : 'ephemeral'),
+    local_ai_mcp_enabled: data.local_ai_mcp_enabled ?? 'true',
+    local_ai_mcp_integrations: JSON.stringify(integrations.length > 0 ? integrations : DEFAULT_INTEGRATIONS),
+    default_web_search_provider: data.default_web_search_provider || DEFAULT_WEB_SEARCH_PROVIDER,
+    web_search_enabled: data.web_search_enabled ?? 'true',
   };
 }
 

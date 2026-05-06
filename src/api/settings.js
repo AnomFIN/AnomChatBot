@@ -1,6 +1,6 @@
 import { getConversation, updateConversationSettings } from '../persistence/conversations.js';
 import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
-import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, VALID_LOCAL_AI_MCP_MODES, redactSecret } from '../config/index.js';
+import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, VALID_LOCAL_AI_MCP_MODES, VALID_WEB_SEARCH_PROVIDERS, redactSecret } from '../config/index.js';
 
 const MAX_LOGO_DATA_BYTES = 3 * 1024 * 1024;
 const MAX_BACKGROUND_DATA_BYTES = 5 * 1024 * 1024;
@@ -68,6 +68,9 @@ export default async function settingsRoutes(fastify, opts) {
     if (localEnabled && tokenEnabled && body.local_ai_permission_token !== undefined && !String(body.local_ai_permission_token).trim()) {
       errors.push('LM Studio Permission Token is required when token usage is enabled');
     }
+    if (body.default_web_search_provider !== undefined && !VALID_WEB_SEARCH_PROVIDERS.includes(String(body.default_web_search_provider).toLowerCase())) {
+      errors.push(`Default Web Search Provider must be one of: ${VALID_WEB_SEARCH_PROVIDERS.join(', ')}`);
+    }
     if (body.local_ai_mcp_mode !== undefined && !VALID_LOCAL_AI_MCP_MODES.includes(mcpMode)) {
       errors.push(`MCP Mode must be one of: ${VALID_LOCAL_AI_MCP_MODES.join(', ')}`);
     }
@@ -104,6 +107,7 @@ export default async function settingsRoutes(fastify, opts) {
       'local_ai_enabled', 'local_ai_provider', 'local_ai_base_url', 'local_ai_model',
       'local_ai_use_permission_token', 'local_ai_permission_token',
       'local_ai_mcp_enabled', 'local_ai_mcp_mode', 'local_ai_mcp_config_path', 'local_ai_mcp_integrations',
+      'default_web_search_provider', 'web_search_enabled',
       'branding_top_bar_logo', 'branding_chat_background',
     ];
 

@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_LOCAL_AI_BASE_URL, DEFAULT_LOCAL_AI_MODEL, DEFAULT_WEB_SEARCH_PROVIDER, getDefaultEphemeralMcpIntegrations } from '../core/mcpIntegrations.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -12,6 +13,7 @@ export const VALID_WHATSAPP_MODES = ['cloud_api', 'baileys'];
 export const VALID_AI_PROVIDERS = ['openai', 'openai_compatible'];
 export const VALID_LOCAL_AI_PROVIDERS = ['lmstudio'];
 export const VALID_LOCAL_AI_MCP_MODES = ['disabled', 'local_config', 'ephemeral'];
+export const VALID_WEB_SEARCH_PROVIDERS = ['brave', 'duckduckgo', 'disabled'];
 export const VALID_LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
 export const VALID_AI_APPROACH_MAX_MESSAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export const VALID_AI_APPROACH_DELAY_MINUTES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440];
@@ -101,17 +103,20 @@ export function validateConfig(env) {
   const openaiModel = env.OPENAI_MODEL || 'gpt-4o-mini';
 
   // ── Local AI / LM Studio (strictly separate from OpenAI cloud) ─────────────
-  const localAiEnabled = parseBoolean(env.LOCAL_AI_ENABLED, false);
+  const localAiEnabled = parseBoolean(env.LOCAL_AI_ENABLED, true);
   const localAiProvider = (env.LOCAL_AI_PROVIDER || 'lmstudio').toLowerCase();
-  const localAiBaseUrl = env.LOCAL_AI_BASE_URL || 'http://127.0.0.1:1234/v1';
-  const localAiModel = env.LOCAL_AI_MODEL || '';
+  const localAiBaseUrl = env.LOCAL_AI_BASE_URL || DEFAULT_LOCAL_AI_BASE_URL;
+  const localAiModel = env.LOCAL_AI_MODEL || DEFAULT_LOCAL_AI_MODEL;
   const localAiUsePermissionToken = parseBoolean(env.LOCAL_AI_USE_PERMISSION_TOKEN, false);
   const localAiPermissionToken = env.LOCAL_AI_PERMISSION_TOKEN || '';
-  const localAiMcpEnabled = parseBoolean(env.LOCAL_AI_MCP_ENABLED, false);
+  const webSearchProvider = (env.WEB_SEARCH_PROVIDER || DEFAULT_WEB_SEARCH_PROVIDER).toLowerCase().trim();
+  const webSearchEnabled = parseBoolean(env.WEB_SEARCH_ENABLED, webSearchProvider !== 'disabled');
+  const effectiveWebSearchProvider = webSearchEnabled ? webSearchProvider : 'disabled';
+  const localAiMcpEnabled = parseBoolean(env.LOCAL_AI_MCP_ENABLED, true);
   const localAiMcpModeRaw = (env.LOCAL_AI_MCP_MODE || '').toLowerCase().trim();
-  const localAiMcpMode = localAiMcpModeRaw || (localAiMcpEnabled ? 'local_config' : 'disabled');
+  const localAiMcpMode = localAiMcpModeRaw || (localAiMcpEnabled ? 'ephemeral' : 'disabled');
   const localAiMcpConfigPath = env.LOCAL_AI_MCP_CONFIG_PATH || '.mcp.json';
-  const localAiMcpIntegrations = env.LOCAL_AI_MCP_INTEGRATIONS || '[]';
+  const localAiMcpIntegrations = env.LOCAL_AI_MCP_INTEGRATIONS || JSON.stringify(getDefaultEphemeralMcpIntegrations(effectiveWebSearchProvider));
 
   if (!VALID_LOCAL_AI_PROVIDERS.includes(localAiProvider)) {
     errors.push(`LOCAL_AI_PROVIDER must be one of: ${VALID_LOCAL_AI_PROVIDERS.join(', ')}`);
@@ -120,6 +125,9 @@ export function validateConfig(env) {
   if (localAiEnabled && !localAiModel) warnings.push('LOCAL_AI_MODEL not set — Local AI will need a model before use');
   if (localAiEnabled && localAiUsePermissionToken && !localAiPermissionToken) {
     warnings.push('LOCAL_AI_USE_PERMISSION_TOKEN=true but LOCAL_AI_PERMISSION_TOKEN is not set');
+  }
+  if (!VALID_WEB_SEARCH_PROVIDERS.includes(effectiveWebSearchProvider)) {
+    errors.push(`WEB_SEARCH_PROVIDER must be one of: ${VALID_WEB_SEARCH_PROVIDERS.join(', ')}`);
   }
   if (!VALID_LOCAL_AI_MCP_MODES.includes(localAiMcpMode)) {
     errors.push(`LOCAL_AI_MCP_MODE must be one of: ${VALID_LOCAL_AI_MCP_MODES.join(', ')}`);
@@ -131,7 +139,7 @@ export function validateConfig(env) {
     errors.push('LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral');
   }
 
-  if (VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
+  if (!localAiEnabled && VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
     warnings.push('OPENAI_API_KEY not set — AI features will not work until configured');
   }
 
@@ -174,12 +182,12 @@ export function validateConfig(env) {
     errors.push(`DEFAULT_FLIRT must be one of: ${VALID_FLIRTS.join(', ')}`);
   }
 
-  const defaultTemperature = parseNumeric(env.DEFAULT_TEMPERATURE, 0.7);
+  const defaultTemperature = parseNumeric(env.DEFAULT_TEMPERATURE, 0.35);
   if (defaultTemperature === null) {
     errors.push('DEFAULT_TEMPERATURE must be a valid number');
   }
 
-  const defaultMaxTokens = parseInteger(env.DEFAULT_MAX_TOKENS, 1000);
+  const defaultMaxTokens = parseInteger(env.DEFAULT_MAX_TOKENS, 300);
   if (defaultMaxTokens === null) {
     errors.push('DEFAULT_MAX_TOKENS must be a valid integer');
   }
@@ -226,6 +234,10 @@ export function validateConfig(env) {
         mcpMode: localAiMcpMode,
         mcpConfigPath: localAiMcpConfigPath,
         mcpIntegrations: localAiMcpIntegrations,
+      }),
+      webSearch: Object.freeze({
+        enabled: effectiveWebSearchProvider !== 'disabled',
+        provider: effectiveWebSearchProvider,
       }),
     }),
     whatsapp: Object.freeze({

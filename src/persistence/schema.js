@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_LOCAL_AI_BASE_URL, DEFAULT_LOCAL_AI_MODEL, DEFAULT_WEB_SEARCH_PROVIDER, getDefaultEphemeralMcpIntegrations } from '../core/mcpIntegrations.js';
 
 /**
  * Database schema and migrations.
@@ -42,10 +43,15 @@ export function runMigrations(db) {
     runV7(db);
   }
 
+  // ── v8: Local AI + routed Web/HuggingFace MCP defaults ───────────────
+  if (schemaVersion < 8) {
+    runV8(db);
+  }
+
   // ── update schema version ──────────────────────────────────────────────
   db.prepare(`
     INSERT OR REPLACE INTO _meta (key, value, updated_at)
-    VALUES ('schema_version', '7', datetime('now'))
+    VALUES ('schema_version', '8', datetime('now'))
   `).run();
 }
 
@@ -266,6 +272,18 @@ function runV7(db) {
   seedSettings(db);
 }
 
+function runV8(db) {
+  ensureSettings(db);
+  seedSettings(db);
+  const update = db.prepare("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = ? AND value = ?");
+  update.run('true', 'local_ai_enabled', 'false');
+  update.run(DEFAULT_LOCAL_AI_BASE_URL, 'local_ai_base_url', 'http://127.0.0.1:1234/v1');
+  update.run(DEFAULT_LOCAL_AI_MODEL, 'local_ai_model', '');
+  update.run('true', 'local_ai_mcp_enabled', 'false');
+  update.run('ephemeral', 'local_ai_mcp_mode', 'disabled');
+  update.run(JSON.stringify(getDefaultEphemeralMcpIntegrations(DEFAULT_WEB_SEARCH_PROVIDER)), 'local_ai_mcp_integrations', '[]');
+}
+
 function ensureSettings(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -342,16 +360,18 @@ function seedSettings(db) {
     ['ai_base_url', ''],
     ['ai_model', ''],
     ['ai_api_key', ''],
-    ['local_ai_enabled', 'false'],
+    ['local_ai_enabled', 'true'],
     ['local_ai_provider', 'lmstudio'],
-    ['local_ai_base_url', 'http://127.0.0.1:1234/v1'],
-    ['local_ai_model', ''],
+    ['local_ai_base_url', DEFAULT_LOCAL_AI_BASE_URL],
+    ['local_ai_model', DEFAULT_LOCAL_AI_MODEL],
     ['local_ai_use_permission_token', 'false'],
     ['local_ai_permission_token', ''],
-    ['local_ai_mcp_enabled', 'false'],
-    ['local_ai_mcp_mode', 'disabled'],
+    ['local_ai_mcp_enabled', 'true'],
+    ['local_ai_mcp_mode', 'ephemeral'],
     ['local_ai_mcp_config_path', '.mcp.json'],
-    ['local_ai_mcp_integrations', '[]'],
+    ['local_ai_mcp_integrations', JSON.stringify(getDefaultEphemeralMcpIntegrations(DEFAULT_WEB_SEARCH_PROVIDER))],
+    ['default_web_search_provider', DEFAULT_WEB_SEARCH_PROVIDER],
+    ['web_search_enabled', 'true'],
     ['branding_top_bar_logo', ''],
     ['branding_chat_background', ''],
   ];

@@ -57,10 +57,26 @@ describe('Schema & Database', () => {
     expect(tables).toContain('transport_status');
   });
 
-  it('sets schema_version to 7', () => {
+  it('sets schema_version to 8', () => {
     const db = getDatabase();
     const row = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get();
-    expect(row.value).toBe('7');
+    expect(row.value).toBe('8');
+  });
+
+
+
+  it('seeds Local AI and routed MCP defaults', () => {
+    const db = getDatabase();
+    const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('local_ai_enabled','local_ai_base_url','local_ai_model','local_ai_mcp_mode','local_ai_mcp_integrations','default_web_search_provider')").all();
+    const settings = Object.fromEntries(rows.map(row => [row.key, row.value]));
+    expect(settings.local_ai_enabled).toBe('true');
+    expect(settings.local_ai_base_url).toBe('http://10.5.0.2:1234/v1');
+    expect(settings.local_ai_model).toBe('qwen3-coder-next');
+    expect(settings.local_ai_mcp_mode).toBe('ephemeral');
+    expect(settings.default_web_search_provider).toBe('brave');
+    const integrations = JSON.parse(settings.local_ai_mcp_integrations);
+    expect(integrations.some(item => item.server_label === 'brave-search')).toBe(true);
+    expect(integrations.some(item => item.server_label === 'huggingface')).toBe(true);
   });
 
   it('creates indexes', () => {

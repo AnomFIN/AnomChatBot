@@ -173,8 +173,8 @@ describe('Config — defaults', () => {
     expect(config.telegram.enabled).toBe(false);
     expect(config.defaults.tone).toBe('friendly');
     expect(config.defaults.flirt).toBe('none');
-    expect(config.defaults.temperature).toBe(0.7);
-    expect(config.defaults.maxTokens).toBe(1000);
+    expect(config.defaults.temperature).toBe(0.35);
+    expect(config.defaults.maxTokens).toBe(300);
     expect(config.defaults.maxHistory).toBe(50);
     expect(config.media.storageDir).toBe('./data/media');
     expect(config.media.maxImageSizeMb).toBe(5);
@@ -191,10 +191,10 @@ describe('Config — defaults', () => {
 });
 
 describe('Config — conditional warnings', () => {
-  it('warns when AI_PROVIDER=openai but no API key', () => {
+  it('does not warn for missing OPENAI_API_KEY while Local AI default is active', () => {
     const result = validateConfig({ ...BASE_ENV, AI_PROVIDER: 'openai' });
     expect(result.valid).toBe(true);
-    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(false);
   });
 
   it('warns when WHATSAPP_MODE=cloud_api but no access token', () => {
@@ -211,17 +211,34 @@ describe('Config — Local AI / LM Studio', () => {
     expect(result.config.ai.localAi).toMatchObject({
       enabled: true,
       provider: 'lmstudio',
-      baseUrl: 'http://127.0.0.1:1234/v1',
+      baseUrl: 'http://10.5.0.2:1234/v1',
       model: 'qwen-local',
       usePermissionToken: false,
-      mcpEnabled: false,
-      mcpMode: 'disabled',
+      mcpEnabled: true,
+      mcpMode: 'ephemeral',
       mcpConfigPath: '.mcp.json',
-      mcpIntegrations: '[]',
+      mcpIntegrations: expect.any(String),
     });
     expect(result.config.ai.openaiApiKey).toBe('');
   });
 
+
+
+
+  it('defaults to Local AI ON with routed Brave + HuggingFace MCP integrations', () => {
+    const result = validateConfig({ ...BASE_ENV });
+    expect(result.valid).toBe(true);
+    expect(result.config.ai.localAi.enabled).toBe(true);
+    expect(result.config.ai.localAi.baseUrl).toBe('http://10.5.0.2:1234/v1');
+    expect(result.config.ai.localAi.model).toBe('qwen3-coder-next');
+    expect(result.config.ai.localAi.mcpMode).toBe('ephemeral');
+    expect(result.config.defaults.temperature).toBe(0.35);
+    expect(result.config.defaults.maxTokens).toBe(300);
+    expect(result.config.ai.webSearch).toMatchObject({ enabled: true, provider: 'brave' });
+    const integrations = JSON.parse(result.config.ai.localAi.mcpIntegrations);
+    expect(integrations.some(item => item.server_label === 'brave-search')).toBe(true);
+    expect(integrations.some(item => item.server_label === 'huggingface')).toBe(true);
+  });
 
   it('supports Ephemeral MCP integration env JSON for Local AI', () => {
     const integrations = JSON.stringify([{ server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['model_search'] }]);
@@ -252,10 +269,10 @@ describe('Config — Local AI / LM Studio', () => {
     expect(result.errors.some(e => e.includes('LOCAL_AI_MCP_INTEGRATIONS'))).toBe(true);
   });
 
-  it('keeps OPENAI_API_KEY warning behavior even when Local AI is enabled', () => {
+  it('does not require OPENAI_API_KEY when Local AI is enabled by default', () => {
     const result = validateConfig({ ...BASE_ENV, LOCAL_AI_ENABLED: 'true', LOCAL_AI_MODEL: 'qwen-local' });
     expect(result.valid).toBe(true);
-    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(false);
   });
 
   it('rejects unsupported Local AI providers', () => {
