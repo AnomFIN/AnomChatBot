@@ -225,8 +225,8 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     if (trimmed) return trimmed;
     const lastUser = [...recentMessages].reverse().find(m => m.role === 'user' && String(m.content || '').trim());
     const topic = String(lastUser?.content || '').trim().slice(0, 120);
-    if (!topic) return 'Jatketaanko tästä seuraavaan konkreettiseen askeleeseen?';
-    return `Haluatko jatkaa aiheesta “${topic}” suoraan seuraavaan askeleeseen vai tarkennetaanko ensin tavoite?`;
+    if (!topic) return 'Shall we continue with the next concrete step?';
+    return `Would you like to continue with “${topic}” by moving directly to the next step, or should we clarify the goal first?`;
   }
 
   /**
