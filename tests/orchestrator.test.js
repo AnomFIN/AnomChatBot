@@ -225,11 +225,13 @@ describe('Orchestrator — handleOperatorMessage', () => {
     await orchestrator.handleOperatorMessage(incoming.conversation.id, 'First reply');
     mockIO.emit.mockClear();
 
-    await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Second reply');
+    const result = await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Second reply');
 
-    // conversation:update should NOT be emitted since auto_reply is already 1
+    // auto_reply should still be 1 (not re-flipped)
+    expect(result.conversation.auto_reply).toBe(1);
+    // conversation:update IS emitted (operator message always updates conversation state)
     const updateCalls = mockIO.emit.mock.calls.filter(c => c[0] === 'conversation:update');
-    expect(updateCalls).toHaveLength(0);
+    expect(updateCalls).toHaveLength(1);
   });
 });
 
@@ -268,6 +270,86 @@ describe('Orchestrator — AI error handling', () => {
     expect(failingAI.generateReply).not.toHaveBeenCalled();
 
     // Clean up: shutdown to clear pending timers
+    orchestrator.shutdown();
+  });
+});
+
+describe('Orchestrator — Local AI provider selection', () => {
+  let mockIO;
+  let mockAI;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    cleanupTestDb();
+    initDatabase(TEST_CONFIG);
+    mockAI = createMockAIProvider();
+    mockIO = createMockIO();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    closeDatabase();
+    cleanupTestDb();
+  });
+
+  it('does not use cloud AI (mockAI) when Local AI is enabled with a model', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    // Configure Local AI in the settings table
+    setSettingsBulk({
+      local_ai_enabled: 'true',
+      local_ai_model: 'test-local-model',
+      local_ai_base_url: 'http://127.0.0.1:1234/v1',
+    });
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
+    // Trigger a delayed reply
+    const incoming = await orchestrator.handleIncomingMessage('api', 'lai-1', 'User', 'Hello');
+    await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hi!');
+    await orchestrator.handleIncomingMessage('api', 'lai-1', 'User', 'Question?');
+
+    // Advance past delay — the Local AI provider is used, not mockAI
+    // The Local AI provider will fail (no real LM Studio), but mockAI must NOT be called
+    await vi.advanceTimersByTimeAsync(3500);
+
+    // Cloud AI (mockAI) must not be used when Local AI is enabled
+    expect(mockAI.generateReply).not.toHaveBeenCalled();
+
+    orchestrator.shutdown();
+  });
+
+  it('does not fall back to cloud AI when Local AI is enabled but model is missing', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    // Enable Local AI but leave model unset
+    setSettingsBulk({ local_ai_enabled: 'true' });
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
+    const incoming = await orchestrator.handleIncomingMessage('api', 'lai-2', 'User', 'Hello');
+    await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hi!');
+    await orchestrator.handleIncomingMessage('api', 'lai-2', 'User', 'Question?');
+
+    await vi.advanceTimersByTimeAsync(3500);
+
+    // Cloud AI (mockAI) must never be called — system should fail with disabled provider
+    expect(mockAI.generateReply).not.toHaveBeenCalled();
+
+    orchestrator.shutdown();
+  });
+
+  it('uses cloud AI (mockAI) when Local AI is disabled', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    // Fix the reply delay to 3000 ms so the timer fires within the advance window
+    setSettingsBulk({ local_ai_enabled: 'false', reply_delay_min: '3000', reply_delay_max: '3000' });
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
+    const incoming = await orchestrator.handleIncomingMessage('api', 'lai-3', 'User', 'Hello');
+    await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hi!');
+    await orchestrator.handleIncomingMessage('api', 'lai-3', 'User', 'Question?');
+
+    await vi.advanceTimersByTimeAsync(3500);
+
+    // Cloud mockAI should be called when Local AI is off
+    expect(mockAI.generateReply).toHaveBeenCalled();
+
     orchestrator.shutdown();
   });
 });

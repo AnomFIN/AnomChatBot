@@ -3,6 +3,14 @@ import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
 import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, redactSecret } from '../config/index.js';
 
 /**
+ * Check whether a value looks like it was produced by redactSecret().
+ * redactSecret() returns '***' for short secrets and 'aaaa...bbb' for longer ones.
+ */
+function isRedacted(value) {
+  return value === '***' || (typeof value === 'string' && value.includes('...'));
+}
+
+/**
  * Settings API routes.
  *
  * GET  /api/conversations/:id/settings  — Get conversation settings
@@ -20,6 +28,9 @@ export default async function settingsRoutes(fastify, opts) {
     const redacted = { ...settings };
     if (redacted.ai_api_key) {
       redacted.ai_api_key = redactSecret(redacted.ai_api_key);
+    }
+    if (redacted.local_ai_permission_token) {
+      redacted.local_ai_permission_token = redactSecret(redacted.local_ai_permission_token);
     }
     return { success: true, data: redacted };
   });
@@ -62,6 +73,9 @@ export default async function settingsRoutes(fastify, opts) {
       'presence_enabled', 'presence_read_delay', 'presence_typing_speed',
       'presence_min_typing', 'presence_max_typing', 'presence_idle_after_send',
       'ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key',
+      'local_ai_enabled', 'local_ai_provider', 'local_ai_base_url', 'local_ai_model',
+      'local_ai_use_permission_token', 'local_ai_permission_token',
+      'local_ai_mcp_enabled', 'local_ai_mcp_config_path',
     ];
 
     const updates = {};
@@ -71,9 +85,13 @@ export default async function settingsRoutes(fastify, opts) {
       }
     }
 
-    // Prevent saving redacted API keys back to DB
-    if (updates.ai_api_key && updates.ai_api_key.includes('...')) {
+    // Prevent saving redacted API keys back to DB.
+    // redactSecret() returns '***' for short secrets (<8 chars) or 'first4...last3' for longer ones.
+    if (updates.ai_api_key && isRedacted(updates.ai_api_key)) {
       delete updates.ai_api_key;
+    }
+    if (updates.local_ai_permission_token && isRedacted(updates.local_ai_permission_token)) {
+      delete updates.local_ai_permission_token;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -85,6 +103,9 @@ export default async function settingsRoutes(fastify, opts) {
     const allSettings = getAllSettings();
     if (allSettings.ai_api_key) {
       allSettings.ai_api_key = redactSecret(allSettings.ai_api_key);
+    }
+    if (allSettings.local_ai_permission_token) {
+      allSettings.local_ai_permission_token = redactSecret(allSettings.local_ai_permission_token);
     }
 
     return { success: true, data: allSettings };
