@@ -369,7 +369,6 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     } finally {
       finishGeneration(conversationId, generation);
     }
-
     // Version check AGAIN after AI call (more messages may have arrived while waiting for AI)
     if (!delayManager.isCurrentVersion(conversationId, version)) {
       log('info', `Stale AI reply discarded for ${conversationId} (v${version} outdated after AI call)`);
