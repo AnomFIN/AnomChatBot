@@ -60,9 +60,13 @@ export default function GlobalSettings({ status, onBrandingChange }) {
       return;
     }
 
-    const dataUrl = await readFileAsDataUrl(file);
-    handleBrandingChange(key, dataUrl);
-    setError(null);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      handleBrandingChange(key, dataUrl);
+      setError(null);
+    } catch {
+      setError('Unable to read the selected file. Please try again with a different file.');
+    }
   };
 
   const handleSave = async () => {
