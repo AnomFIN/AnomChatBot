@@ -337,7 +337,8 @@ describe('Orchestrator — Local AI provider selection', () => {
 
   it('uses cloud AI (mockAI) when Local AI is disabled', async () => {
     const { setSettingsBulk } = await import('../src/persistence/settings.js');
-    setSettingsBulk({ local_ai_enabled: 'false' });
+    // Fix the reply delay to 3000 ms so the timer fires within the advance window
+    setSettingsBulk({ local_ai_enabled: 'false', reply_delay_min: '3000', reply_delay_max: '3000' });
 
     const orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
     const incoming = await orchestrator.handleIncomingMessage('api', 'lai-3', 'User', 'Hello');
