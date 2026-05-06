@@ -55,7 +55,7 @@ export default function StatusBar({ status, botActivities, logoSrc }) {
   return (
     <div className="status-bar">
       <div className="status-brand">
-        {logoSrc ? <img src={logoSrc} alt="AnomChatBot logo" /> : <span className="status-brand-mark">AnomChatBot</span>}
+        {logoSrc ? <img src={logoSrc} alt="Logo" /> : <span className="status-brand-mark">AnomChatBot</span>}
       </div>
       <div className="status-item">
         <Dot color={socketConnected ? '#22c55e' : '#ef4444'} />
