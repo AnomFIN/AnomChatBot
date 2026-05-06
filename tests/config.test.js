@@ -203,3 +203,32 @@ describe('Config — conditional warnings', () => {
     expect(result.warnings.some(w => w.includes('WHATSAPP_CLOUD_ACCESS_TOKEN'))).toBe(true);
   });
 });
+
+describe('Config — Local AI / LM Studio', () => {
+  it('normalizes Local AI defaults separately from OpenAI', () => {
+    const result = validateConfig({ ...BASE_ENV, LOCAL_AI_ENABLED: 'true', LOCAL_AI_MODEL: 'qwen-local' });
+    expect(result.valid).toBe(true);
+    expect(result.config.ai.localAi).toMatchObject({
+      enabled: true,
+      provider: 'lmstudio',
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      model: 'qwen-local',
+      usePermissionToken: false,
+      mcpEnabled: false,
+      mcpConfigPath: '.mcp.json',
+    });
+    expect(result.config.ai.openaiApiKey).toBe('');
+  });
+
+  it('keeps OPENAI_API_KEY warning behavior even when Local AI is enabled', () => {
+    const result = validateConfig({ ...BASE_ENV, LOCAL_AI_ENABLED: 'true', LOCAL_AI_MODEL: 'qwen-local' });
+    expect(result.valid).toBe(true);
+    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(true);
+  });
+
+  it('rejects unsupported Local AI providers', () => {
+    const result = validateConfig({ ...BASE_ENV, LOCAL_AI_PROVIDER: 'ollama' });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('LOCAL_AI_PROVIDER'))).toBe(true);
+  });
+});

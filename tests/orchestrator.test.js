@@ -3,6 +3,7 @@ import { rmSync } from 'node:fs';
 import { initDatabase, closeDatabase } from '../src/persistence/database.js';
 import { getConversation, getConversationCount } from '../src/persistence/conversations.js';
 import { getMessageCount, getRecentMessages } from '../src/persistence/messages.js';
+import { setSettingsBulk } from '../src/persistence/settings.js';
 import { createOrchestrator } from '../src/conversation/orchestrator.js';
 
 const TEST_DB_PATH = './data/test-orchestrator.db';
@@ -116,6 +117,64 @@ describe('Orchestrator — handleIncomingMessage', () => {
       message: expect.objectContaining({ role: 'user', content: 'Hi' }),
     }));
   });
+
+  it('aborts in-flight generation and only persists the latest rapid-message reply', async () => {
+    vi.useFakeTimers();
+    setSettingsBulk({ reply_delay_min: '3000', reply_delay_max: '3000' });
+
+    let abortCount = 0;
+    const rapidAI = {
+      generateReply: vi.fn((messages, options = {}) => {
+        const userText = messages
+          .filter(m => m.role === 'user')
+          .map(m => typeof m.content === 'string' ? m.content : '[media]')
+          .join(' | ');
+
+        if (rapidAI.generateReply.mock.calls.length === 1) {
+          return new Promise((resolve, reject) => {
+            options.signal?.addEventListener('abort', () => {
+              abortCount += 1;
+              const error = new Error('Generation cancelled');
+              error.name = 'AbortError';
+              reject(error);
+            }, { once: true });
+          });
+        }
+
+        return Promise.resolve({
+          content: `latest: ${userText}`,
+          tokenUsage: { prompt: 1, completion: 1, total: 2 },
+        });
+      }),
+      testConnection: vi.fn(),
+      getStatus: vi.fn(),
+    };
+
+    const localOrchestrator = createOrchestrator(TEST_CONFIG, rapidAI, mockIO);
+    const first = await localOrchestrator.handleIncomingMessage('api', 'rapid-1', 'User', 'A');
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(rapidAI.generateReply).toHaveBeenCalledTimes(1);
+
+    await localOrchestrator.handleIncomingMessage('api', 'rapid-1', 'User', 'B');
+    await localOrchestrator.handleIncomingMessage('api', 'rapid-1', 'User', 'C');
+    await Promise.resolve();
+
+    expect(abortCount).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    await Promise.resolve();
+
+    expect(rapidAI.generateReply).toHaveBeenCalledTimes(2);
+    const messages = getRecentMessages(first.conversation.id, 10);
+    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].content).toContain('A | B | C');
+
+    localOrchestrator.shutdown();
+    vi.useRealTimers();
+  });
+
 });
 
 describe('Orchestrator — first-message rule', () => {

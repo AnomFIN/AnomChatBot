@@ -71,6 +71,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
   // Cache per-conversation AI providers to avoid recreating each call
   const conversationProviders = new Map();
+  const activeGenerations = new Map();
 
   /**
    * Get the AI provider for a conversation.
@@ -119,7 +120,42 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
    * Returns a cached provider if global overrides are configured, or null.
    */
   function _getGlobalAIProvider() {
-    const settings = getSettingsBulk(['ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key']);
+    const settings = getSettingsBulk([
+      'ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key',
+      'local_ai_enabled', 'local_ai_provider', 'local_ai_base_url', 'local_ai_model',
+      'local_ai_use_permission_token', 'local_ai_permission_token',
+      'local_ai_mcp_enabled', 'local_ai_mcp_config_path',
+    ]);
+
+    const localAiEnabled = isTruthy(settings.local_ai_enabled);
+    if (localAiEnabled) {
+      const localAi = {
+        enabled: true,
+        provider: settings.local_ai_provider || 'lmstudio',
+        baseUrl: settings.local_ai_base_url || config.ai.localAi?.baseUrl || 'http://127.0.0.1:1234/v1',
+        model: settings.local_ai_model || config.ai.localAi?.model || '',
+        usePermissionToken: isTruthy(settings.local_ai_use_permission_token),
+        permissionToken: settings.local_ai_permission_token || config.ai.localAi?.permissionToken || '',
+        mcpEnabled: isTruthy(settings.local_ai_mcp_enabled),
+        mcpConfigPath: settings.local_ai_mcp_config_path || '.mcp.json',
+      };
+      const cacheKey = `global|local|${localAi.provider}|${localAi.baseUrl}|${localAi.model}|token:${localAi.usePermissionToken}|mcp:${localAi.mcpEnabled}:${localAi.mcpConfigPath}`;
+      if (conversationProviders.has(cacheKey)) return conversationProviders.get(cacheKey);
+
+      try {
+        const provider = createAIProvider({ ai: { ...config.ai, localAi } });
+        conversationProviders.set(cacheKey, provider);
+        log('info', `Created global Local AI provider: ${localAi.provider}|${localAi.baseUrl}|${localAi.model}`);
+        if (localAi.mcpEnabled) {
+          log('warn', `MCP config detected at ${localAi.mcpConfigPath}, but tool-call loop is not implemented yet`);
+        }
+        return provider;
+      } catch (err) {
+        log('warn', `Failed to create global Local AI provider: ${err.message}`);
+        return null;
+      }
+    }
+
     if (!settings.ai_provider || !settings.ai_model) {
       return null;
     }
@@ -135,6 +171,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
         openaiApiKey: settings.ai_api_key || config.ai.openaiApiKey,
         openaiBaseUrl: settings.ai_base_url || '',
         openaiModel: settings.ai_model,
+        localAi: { enabled: false },
       },
     };
 
@@ -147,6 +184,49 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       log('warn', `Failed to create global AI override provider: ${err.message}`);
       return null;
     }
+  }
+
+  function isTruthy(value) {
+    return value === true || value === 'true' || value === '1' || value === 1 || value === 'yes' || value === 'on';
+  }
+
+  function beginGeneration(conversationId) {
+    const previous = activeGenerations.get(conversationId);
+    if (previous) previous.controller.abort();
+    const generation = {
+      id: (previous?.id ?? 0) + 1,
+      controller: new AbortController(),
+    };
+    activeGenerations.set(conversationId, generation);
+    return generation;
+  }
+
+  function isCurrentGeneration(conversationId, generation) {
+    return activeGenerations.get(conversationId)?.id === generation.id;
+  }
+
+  function finishGeneration(conversationId, generation) {
+    if (isCurrentGeneration(conversationId, generation)) {
+      activeGenerations.delete(conversationId);
+    }
+  }
+
+  function cancelGeneration(conversationId, reason) {
+    const generation = activeGenerations.get(conversationId);
+    if (!generation) return;
+    generation.controller.abort();
+    activeGenerations.delete(conversationId);
+    log('info', `Cancelled active AI generation for ${conversationId} — ${reason}`);
+    emit('bot:activity', { conversationId, state: 'idle' });
+  }
+
+  function normalizeAssistantContent(content, recentMessages) {
+    const trimmed = String(content || '').trim();
+    if (trimmed) return trimmed;
+    const lastUser = [...recentMessages].reverse().find(m => m.role === 'user' && String(m.content || '').trim());
+    const topic = String(lastUser?.content || '').trim().slice(0, 120);
+    if (!topic) return 'Shall we continue with the next concrete step?';
+    return `Would you like to continue with “${topic}” by moving directly to the next step, or should we clarify the goal first?`;
   }
 
   /**
@@ -192,18 +272,25 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       maxApproaches: approachInfo.maxMessages,
     });
 
+    const generation = beginGeneration(conversationId);
     let aiReply;
     try {
       const provider = getAIProvider(conversation);
       aiReply = await provider.generateReply(messages, {
         temperature: conversation.temperature,
         max_tokens: conversation.max_tokens,
+        signal: generation.controller.signal,
       });
+      if (!isCurrentGeneration(conversationId, generation)) return;
+      aiReply.content = normalizeAssistantContent(aiReply.content, recentMessages);
     } catch (err) {
+      if (err.name === 'AbortError' || err.type === 'aborted') return;
       log('error', `AI error for approach message ${conversationId}: ${err.message}`);
       approachManager.stopTracking(conversationId, 'ai_error');
       emit('bot:activity', { conversationId, state: 'idle' });
       return;
+    } finally {
+      finishGeneration(conversationId, generation);
     }
 
     // Persist approach message
@@ -255,20 +342,33 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
     const messages = buildMessages(conversation, recentMessages, config);
 
+    const generation = beginGeneration(conversationId);
     let aiReply;
     try {
       const provider = getAIProvider(conversation);
       aiReply = await provider.generateReply(messages, {
         temperature: conversation.temperature,
         max_tokens: conversation.max_tokens,
+        signal: generation.controller.signal,
       });
+      if (!isCurrentGeneration(conversationId, generation)) return;
+      aiReply.content = normalizeAssistantContent(aiReply.content, recentMessages);
     } catch (err) {
+      if (err.name === 'AbortError' || err.type === 'aborted') {
+        if (delayManager.isCurrentVersion(conversationId, version)) {
+          delayManager.complete(conversationId);
+        }
+        return;
+      }
       log('error', `AI error for ${conversationId}: ${err.message}`);
-      delayManager.complete(conversationId);
+      if (delayManager.isCurrentVersion(conversationId, version)) {
+        delayManager.complete(conversationId);
+      }
       emit('bot:activity', { conversationId, state: 'idle' });
       return;
+    } finally {
+      finishGeneration(conversationId, generation);
     }
-
     // Version check AGAIN after AI call (more messages may have arrived while waiting for AI)
     if (!delayManager.isCurrentVersion(conversationId, version)) {
       log('info', `Stale AI reply discarded for ${conversationId} (v${version} outdated after AI call)`);
@@ -467,7 +567,8 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       approachManager.trackUserMessage(conversation.id, conversation);
     }
 
-    // 6. Schedule delayed reply (resets timer if already pending — multi-message batching)
+    // 6. Cancel active generation and schedule a fresh reply from the full latest context (resets timer if already pending — multi-message batching)
+    cancelGeneration(conversation.id, 'new_user_message');
     delayManager.scheduleReply(conversation.id, conversation);
 
     return {
@@ -501,6 +602,8 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       log('info', `Cancelled pending AI reply for ${conversationId} — operator message`);
     }
 
+    cancelGeneration(conversationId, 'operator_message');
+
     // Cancel any pending approach — operator is engaging
     if (approachManager.isTracking(conversationId)) {
       approachManager.cancel(conversationId, 'operator_message');
@@ -515,14 +618,13 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
     emit('message:new', { conversationId, message });
 
-    // First-message rule: flip auto_reply from 0 → 1 and mark manual first message
-    if (conversation.auto_reply === 0) {
+    // First-message rule: mark the first operator message and keep GUI state in sync.
+    if (conversation.first_message_sent_manually === 0) {
       updateConversationSettings(conversationId, {
         auto_reply: 1,
         first_message_sent_manually: 1,
       });
-      const updated = getConversation(conversationId);
-      emit('conversation:update', { conversation: updated });
+      emit('conversation:update', { conversation: getConversation(conversationId) });
     }
 
     // Send to WhatsApp via transport

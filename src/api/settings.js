@@ -2,6 +2,10 @@ import { getConversation, updateConversationSettings } from '../persistence/conv
 import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
 import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, redactSecret } from '../config/index.js';
 
+const MAX_BRANDING_DATA_BYTES = 3 * 1024 * 1024;
+const LOGO_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
+const BACKGROUND_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
 /**
  * Settings API routes.
  *
@@ -20,6 +24,9 @@ export default async function settingsRoutes(fastify, opts) {
     const redacted = { ...settings };
     if (redacted.ai_api_key) {
       redacted.ai_api_key = redactSecret(redacted.ai_api_key);
+    }
+    if (redacted.local_ai_permission_token) {
+      redacted.local_ai_permission_token = redactSecret(redacted.local_ai_permission_token);
     }
     return { success: true, data: redacted };
   });
@@ -43,6 +50,30 @@ export default async function settingsRoutes(fastify, opts) {
       }
     }
 
+    // Validate Local AI / LM Studio settings
+    const localEnabled = body.local_ai_enabled === true || body.local_ai_enabled === 'true' || body.local_ai_enabled === '1';
+    const tokenEnabled = body.local_ai_use_permission_token === true || body.local_ai_use_permission_token === 'true' || body.local_ai_use_permission_token === '1';
+    const mcpEnabled = body.local_ai_mcp_enabled === true || body.local_ai_mcp_enabled === 'true' || body.local_ai_mcp_enabled === '1';
+
+    if (body.local_ai_provider !== undefined && body.local_ai_provider !== '' && body.local_ai_provider !== 'lmstudio') {
+      errors.push('local_ai_provider must be lmstudio');
+    }
+    if (localEnabled && body.local_ai_base_url !== undefined && !String(body.local_ai_base_url).trim()) {
+      errors.push('Local AI Base URL is required when Local AI is enabled');
+    }
+    if (localEnabled && body.local_ai_model !== undefined && !String(body.local_ai_model).trim()) {
+      errors.push('Local AI Model is required when Local AI is enabled');
+    }
+    if (localEnabled && tokenEnabled && body.local_ai_permission_token !== undefined && !String(body.local_ai_permission_token).trim()) {
+      errors.push('LM Studio Permission Token is required when token usage is enabled');
+    }
+    if (localEnabled && mcpEnabled && body.local_ai_mcp_config_path !== undefined && !String(body.local_ai_mcp_config_path).trim()) {
+      errors.push('MCP config path is required when MCP is enabled');
+    }
+
+    validateBrandingDataUrl(body.branding_top_bar_logo, 'branding_top_bar_logo', LOGO_MIME_TYPES, errors);
+    validateBrandingDataUrl(body.branding_chat_background, 'branding_chat_background', BACKGROUND_MIME_TYPES, errors);
+
     // Validate presence settings
     if (body.presence_typing_speed !== undefined) {
       const val = parseInt(body.presence_typing_speed, 10);
@@ -62,6 +93,10 @@ export default async function settingsRoutes(fastify, opts) {
       'presence_enabled', 'presence_read_delay', 'presence_typing_speed',
       'presence_min_typing', 'presence_max_typing', 'presence_idle_after_send',
       'ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key',
+      'local_ai_enabled', 'local_ai_provider', 'local_ai_base_url', 'local_ai_model',
+      'local_ai_use_permission_token', 'local_ai_permission_token',
+      'local_ai_mcp_enabled', 'local_ai_mcp_config_path',
+      'branding_top_bar_logo', 'branding_chat_background',
     ];
 
     const updates = {};
@@ -72,8 +107,11 @@ export default async function settingsRoutes(fastify, opts) {
     }
 
     // Prevent saving redacted API keys back to DB
-    if (updates.ai_api_key && updates.ai_api_key.includes('...')) {
+    if (updates.ai_api_key && (updates.ai_api_key.includes('...') || updates.ai_api_key === '***')) {
       delete updates.ai_api_key;
+    }
+    if (updates.local_ai_permission_token && (updates.local_ai_permission_token.includes('...') || updates.local_ai_permission_token === '***')) {
+      delete updates.local_ai_permission_token;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -85,6 +123,9 @@ export default async function settingsRoutes(fastify, opts) {
     const allSettings = getAllSettings();
     if (allSettings.ai_api_key) {
       allSettings.ai_api_key = redactSecret(allSettings.ai_api_key);
+    }
+    if (allSettings.local_ai_permission_token) {
+      allSettings.local_ai_permission_token = redactSecret(allSettings.local_ai_permission_token);
     }
 
     return { success: true, data: allSettings };
@@ -255,4 +296,31 @@ export default async function settingsRoutes(fastify, opts) {
 
     return { success: true, data: updated };
   });
+}
+
+
+function validateBrandingDataUrl(value, key, allowedMimeTypes, errors) {
+  if (value === undefined || value === '') return;
+  if (typeof value !== 'string') {
+    errors.push(`${key} must be a string data URL`);
+    return;
+  }
+
+  const match = value.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) {
+    errors.push(`${key} must be a base64 image data URL`);
+    return;
+  }
+
+  const [, mimeType, payload] = match;
+  if (!allowedMimeTypes.has(mimeType)) {
+    errors.push(`${key} has unsupported image type`);
+    return;
+  }
+
+  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0;
+  const byteLength = Math.floor((payload.length * 3) / 4) - padding;
+  if (byteLength > MAX_BRANDING_DATA_BYTES) {
+    errors.push(`${key} must be 3MB or smaller`);
+  }
 }

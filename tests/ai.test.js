@@ -219,3 +219,113 @@ describe('AI Provider — baseURL override', () => {
     expect(provider.getStatus().provider).toBe('openai_compatible');
   });
 });
+
+describe('AI Provider — Local AI / LM Studio', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    global.fetch = vi.fn();
+  });
+
+  it('does not send Authorization or instantiate OpenAI SDK when permission token is disabled', async () => {
+    const OpenAI = (await import('openai')).default;
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'local ok' } }] }),
+    });
+
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        usePermissionToken: 'false',
+        permissionToken: 'secret-token',
+      },
+    }));
+
+    const result = await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+
+    expect(result.content).toBe('local ok');
+    expect(OpenAI).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:1234/v1/chat/completions',
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+  });
+
+  it('adds exact Authorization only for Local AI when permission token is enabled', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'token ok' } }] }),
+    });
+
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1/',
+        model: 'local-model',
+        usePermissionToken: true,
+        permissionToken: 'lmstudio-token',
+      },
+    }));
+
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:1234/v1/chat/completions',
+      expect.objectContaining({
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer lmstudio-token',
+        },
+      }),
+    );
+  });
+
+
+
+  it('does not send Local AI token through the OpenAI cloud SDK path', async () => {
+    vi.clearAllMocks();
+    const OpenAI = (await import('openai')).default;
+    const provider = createAIProvider(makeConfig({
+      openaiApiKey: 'sk-cloud-key',
+      localAi: {
+        enabled: false,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        usePermissionToken: true,
+        permissionToken: 'must-not-leak',
+      },
+    }));
+    const instance = OpenAI.mock.results[0].value;
+    instance.chat.completions.create.mockResolvedValueOnce({ choices: [{ message: { content: 'cloud ok' } }] });
+
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+
+    expect(OpenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'sk-cloud-key' }));
+    expect(OpenAI).not.toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'must-not-leak' }));
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('fails clearly when token toggle is enabled but token is missing', async () => {
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        usePermissionToken: true,
+        permissionToken: '',
+      },
+    }));
+
+    await expect(provider.generateReply([{ role: 'user', content: 'Hi' }]))
+      .rejects.toMatchObject({ type: 'auth_error' });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});

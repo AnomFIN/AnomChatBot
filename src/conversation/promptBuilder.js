@@ -41,8 +41,8 @@ export function buildSystemPrompt(conversation, config, approachContext = null) 
     const { approachNumber, maxApproaches } = approachContext;
     parts.push(
       `IMPORTANT: The user has not responded to your previous messages. This is your ${approachNumber} out of ${maxApproaches} follow-up messages. ` +
-      'Be engaging and try to re-start the conversation naturally. Don\'t be pushy or mention that they haven\'t responded. ' +
-      'Ask an interesting question, share something relevant, or provide value to encourage them to engage.'
+      'Continue the conversation logically from the latest messages. Ask exactly one relevant follow-up question or suggest one next step. ' +
+      'Keep it short, do not repeat yourself, do not mention that they have not responded, and never return an empty message.'
     );
   }
 

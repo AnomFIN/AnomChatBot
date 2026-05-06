@@ -10,6 +10,7 @@ export const VALID_TONES = ['professional', 'friendly', 'casual', 'playful'];
 export const VALID_FLIRTS = ['none', 'subtle', 'moderate', 'high'];
 export const VALID_WHATSAPP_MODES = ['cloud_api', 'baileys'];
 export const VALID_AI_PROVIDERS = ['openai', 'openai_compatible'];
+export const VALID_LOCAL_AI_PROVIDERS = ['lmstudio'];
 export const VALID_LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
 export const VALID_AI_APPROACH_MAX_MESSAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export const VALID_AI_APPROACH_DELAY_MINUTES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440];
@@ -89,6 +90,28 @@ export function validateConfig(env) {
   const openaiApiKey = env.OPENAI_API_KEY || '';
   const openaiBaseUrl = env.OPENAI_BASE_URL || '';
   const openaiModel = env.OPENAI_MODEL || 'gpt-4o-mini';
+
+  // ── Local AI / LM Studio (strictly separate from OpenAI cloud) ─────────────
+  const localAiEnabled = parseBoolean(env.LOCAL_AI_ENABLED, false);
+  const localAiProvider = (env.LOCAL_AI_PROVIDER || 'lmstudio').toLowerCase();
+  const localAiBaseUrl = env.LOCAL_AI_BASE_URL || 'http://127.0.0.1:1234/v1';
+  const localAiModel = env.LOCAL_AI_MODEL || '';
+  const localAiUsePermissionToken = parseBoolean(env.LOCAL_AI_USE_PERMISSION_TOKEN, false);
+  const localAiPermissionToken = env.LOCAL_AI_PERMISSION_TOKEN || '';
+  const localAiMcpEnabled = parseBoolean(env.LOCAL_AI_MCP_ENABLED, false);
+  const localAiMcpConfigPath = env.LOCAL_AI_MCP_CONFIG_PATH || '.mcp.json';
+
+  if (!VALID_LOCAL_AI_PROVIDERS.includes(localAiProvider)) {
+    errors.push(`LOCAL_AI_PROVIDER must be one of: ${VALID_LOCAL_AI_PROVIDERS.join(', ')}`);
+  }
+  if (localAiEnabled && !localAiBaseUrl) errors.push('LOCAL_AI_BASE_URL must not be empty when LOCAL_AI_ENABLED=true');
+  if (localAiEnabled && !localAiModel) warnings.push('LOCAL_AI_MODEL not set — Local AI will need a model before use');
+  if (localAiEnabled && localAiUsePermissionToken && !localAiPermissionToken) {
+    warnings.push('LOCAL_AI_USE_PERMISSION_TOKEN=true but LOCAL_AI_PERMISSION_TOKEN is not set');
+  }
+  if (localAiEnabled && localAiMcpEnabled && !localAiMcpConfigPath) {
+    errors.push('LOCAL_AI_MCP_CONFIG_PATH must not be empty when LOCAL_AI_MCP_ENABLED=true');
+  }
 
   if (VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
     warnings.push('OPENAI_API_KEY not set — AI features will not work until configured');
@@ -174,6 +197,16 @@ export function validateConfig(env) {
       openaiApiKey,
       openaiBaseUrl,
       openaiModel,
+      localAi: Object.freeze({
+        enabled: localAiEnabled,
+        provider: localAiProvider,
+        baseUrl: localAiBaseUrl,
+        model: localAiModel,
+        usePermissionToken: localAiUsePermissionToken,
+        permissionToken: localAiPermissionToken,
+        mcpEnabled: localAiMcpEnabled,
+        mcpConfigPath: localAiMcpConfigPath,
+      }),
     }),
     whatsapp: Object.freeze({
       mode: whatsappMode,

@@ -34,7 +34,7 @@ function Dot({ color }) {
   );
 }
 
-export default function StatusBar({ status, botActivities }) {
+export default function StatusBar({ status, botActivities, logoSrc }) {
   const { connected: socketConnected } = useSocketContext();
 
   if (!status) {
@@ -54,6 +54,9 @@ export default function StatusBar({ status, botActivities }) {
 
   return (
     <div className="status-bar">
+      <div className="status-brand">
+        {logoSrc ? <img src={logoSrc} alt="Logo" /> : <span className="status-brand-mark">AnomChatBot</span>}
+      </div>
       <div className="status-item">
         <Dot color={socketConnected ? '#22c55e' : '#ef4444'} />
         <span>Socket: {socketConnected ? 'connected' : 'disconnected'}</span>
