@@ -565,6 +565,7 @@ User: What are trending models on Hugging Face?`);
       { server_label: 'brave', server_url: 'http://localhost:8000/mcp', allowed_tools: ['brave_news_search'] },
     ]);
     expect(result).toHaveLength(1);
+    expect(result[0].allowed_tools).toHaveLength(2);
     expect(result[0].allowed_tools).toEqual(expect.arrayContaining(['brave_web_search', 'brave_news_search']));
     expect(result[0].server_label).toBe('brave');
   });
