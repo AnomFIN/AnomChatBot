@@ -3,6 +3,14 @@ import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
 import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, redactSecret } from '../config/index.js';
 
 /**
+ * Check whether a value looks like it was produced by redactSecret().
+ * redactSecret() returns '***' for short secrets and 'aaaa...bbb' for longer ones.
+ */
+function isRedacted(value) {
+  return value === '***' || (typeof value === 'string' && value.includes('...'));
+}
+
+/**
  * Settings API routes.
  *
  * GET  /api/conversations/:id/settings  — Get conversation settings
@@ -77,11 +85,12 @@ export default async function settingsRoutes(fastify, opts) {
       }
     }
 
-    // Prevent saving redacted API keys back to DB
-    if (updates.ai_api_key && updates.ai_api_key.includes('...')) {
+    // Prevent saving redacted API keys back to DB.
+    // redactSecret() returns '***' for short secrets (<8 chars) or 'first4...last3' for longer ones.
+    if (updates.ai_api_key && isRedacted(updates.ai_api_key)) {
       delete updates.ai_api_key;
     }
-    if (updates.local_ai_permission_token && updates.local_ai_permission_token.includes('...')) {
+    if (updates.local_ai_permission_token && isRedacted(updates.local_ai_permission_token)) {
       delete updates.local_ai_permission_token;
     }
 

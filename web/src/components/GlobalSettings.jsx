@@ -254,24 +254,26 @@ export default function GlobalSettings({ status }) {
               </span>
             </label>
 
-            <label className="toggle-label">
+            <label className="toggle-label" style={{ opacity: 0.6 }}>
               <input
                 type="checkbox"
+                disabled
                 checked={settings.local_ai_mcp_enabled === 'true' || settings.local_ai_mcp_enabled === true}
                 onChange={e => handleChange('local_ai_mcp_enabled', e.target.checked ? 'true' : 'false')}
               />
-              Enable MCP (Model Context Protocol)
+              Enable MCP (Model Context Protocol) <em style={{ fontSize: '0.85em' }}> — coming soon</em>
             </label>
 
-            <label>
-              MCP Config Path
+            <label style={{ opacity: 0.6 }}>
+              MCP Config Path <em style={{ fontSize: '0.85em' }}>— coming soon</em>
               <input
                 type="text"
+                disabled
                 value={settings.local_ai_mcp_config_path || ''}
                 placeholder=".mcp.json"
                 onChange={e => handleChange('local_ai_mcp_config_path', e.target.value)}
               />
-              <span className="field-hint">Path to the MCP configuration file (default: .mcp.json)</span>
+              <span className="field-hint">MCP support is not yet active. Config path will be used in a future update.</span>
             </label>
           </div>
 

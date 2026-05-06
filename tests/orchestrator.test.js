@@ -273,3 +273,82 @@ describe('Orchestrator — AI error handling', () => {
     orchestrator.shutdown();
   });
 });
+
+describe('Orchestrator — Local AI provider selection', () => {
+  let mockIO;
+  let mockAI;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    cleanupTestDb();
+    initDatabase(TEST_CONFIG);
+    mockAI = createMockAIProvider();
+    mockIO = createMockIO();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    closeDatabase();
+    cleanupTestDb();
+  });
+
+  it('does not use cloud AI (mockAI) when Local AI is enabled with a model', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    // Configure Local AI in the settings table
+    setSettingsBulk({
+      local_ai_enabled: 'true',
+      local_ai_model: 'test-local-model',
+      local_ai_base_url: 'http://127.0.0.1:1234/v1',
+    });
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
+    // Trigger a delayed reply
+    const incoming = await orchestrator.handleIncomingMessage('api', 'lai-1', 'User', 'Hello');
+    await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hi!');
+    await orchestrator.handleIncomingMessage('api', 'lai-1', 'User', 'Question?');
+
+    // Advance past delay — the Local AI provider is used, not mockAI
+    // The Local AI provider will fail (no real LM Studio), but mockAI must NOT be called
+    await vi.advanceTimersByTimeAsync(3500);
+
+    // Cloud AI (mockAI) must not be used when Local AI is enabled
+    expect(mockAI.generateReply).not.toHaveBeenCalled();
+
+    orchestrator.shutdown();
+  });
+
+  it('does not fall back to cloud AI when Local AI is enabled but model is missing', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    // Enable Local AI but leave model unset
+    setSettingsBulk({ local_ai_enabled: 'true' });
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
+    const incoming = await orchestrator.handleIncomingMessage('api', 'lai-2', 'User', 'Hello');
+    await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hi!');
+    await orchestrator.handleIncomingMessage('api', 'lai-2', 'User', 'Question?');
+
+    await vi.advanceTimersByTimeAsync(3500);
+
+    // Cloud AI (mockAI) must never be called — system should fail with disabled provider
+    expect(mockAI.generateReply).not.toHaveBeenCalled();
+
+    orchestrator.shutdown();
+  });
+
+  it('uses cloud AI (mockAI) when Local AI is disabled', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    setSettingsBulk({ local_ai_enabled: 'false' });
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
+    const incoming = await orchestrator.handleIncomingMessage('api', 'lai-3', 'User', 'Hello');
+    await orchestrator.handleOperatorMessage(incoming.conversation.id, 'Hi!');
+    await orchestrator.handleIncomingMessage('api', 'lai-3', 'User', 'Question?');
+
+    await vi.advanceTimersByTimeAsync(3500);
+
+    // Cloud mockAI should be called when Local AI is off
+    expect(mockAI.generateReply).toHaveBeenCalled();
+
+    orchestrator.shutdown();
+  });
+});
