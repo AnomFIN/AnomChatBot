@@ -176,20 +176,18 @@ LOCAL_AI_BASE_URL=http://10.5.0.2:1234/v1
 LOCAL_AI_MODEL=qwen3-coder-next
 LOCAL_AI_USE_PERMISSION_TOKEN=false
 LOCAL_AI_PERMISSION_TOKEN=
-WEB_SEARCH_ENABLED=true
-WEB_SEARCH_PROVIDER=brave
-LOCAL_AI_MCP_MODE=ephemeral
+LOCAL_AI_MCP_MODE=disabled
 LOCAL_AI_MCP_CONFIG_PATH=.mcp.json
-LOCAL_AI_MCP_INTEGRATIONS=[{"type":"ephemeral_mcp","server_label":"brave-search","server_url":"http://10.5.0.2:8000/mcp","allowed_tools":["brave_web_search","brave_local_search","brave_news_search"]},{"type":"ephemeral_mcp","server_label":"huggingface","server_url":"https://huggingface.co/mcp","allowed_tools":["hub_repo_search","hub_repo_details","paper_search","hf_doc_search","hf_doc_fetch"]}]
+LOCAL_AI_MCP_INTEGRATIONS=[]
 ```
 
 Runtime settings are also available in **System → Global Settings → Local AI / LM Studio**:
 
 1. Start LM Studio and load a model.
-2. Enable the LM Studio local server on `http://10.5.0.2:1234/v1` (or change the base URL if LM Studio is elsewhere).
-3. Confirm Local AI is enabled; it is ON by default.
-4. Confirm the default model `qwen3-coder-next` or set the exact loaded model id shown by LM Studio.
-5. Keep Ephemeral MCP enabled for routed web/HuggingFace tools, or disable MCP for plain local chat.
+2. Enable the LM Studio local server on `http://127.0.0.1:1234/v1`.
+3. Enable Local AI in the GUI.
+4. Set the exact model id shown by LM Studio.
+5. Choose an MCP Mode if tools are needed.
 6. Save settings and send a test message.
 
 ### LM Studio Permission Token
@@ -210,7 +208,7 @@ MCP is **Local AI / LM Studio only**. OpenAI cloud continues to use the OpenAI S
 |---|---|
 | Disabled | Uses the existing Local AI `/v1/chat/completions` request path. |
 | Local MCP Config (`.mcp.json`) | Keeps the existing local MCP config path behavior for compatibility. |
-| Ephemeral MCP | Uses LM Studio API `/api/v1/chat` with serialized `input` plus ephemeral MCP `integrations`. |
+| Ephemeral MCP | Uses LM Studio’s OpenAI-compatible `/v1/chat/completions` endpoint and adds ephemeral MCP `integrations` to the request body. |
 
 #### Local MCP Config mode
 
@@ -220,9 +218,9 @@ Set **MCP Mode → Local MCP Config (.mcp.json)** and provide **MCP config path*
 
 Set **MCP Mode → Ephemeral MCP**, then add one or more integrations in the card-based GUI:
 
-- **MCP Server Label** — e.g. `brave-search` or `huggingface`
-- **MCP Server URL** — e.g. `http://10.5.0.2:8000/mcp` for a local Brave MCP HTTP server, or `https://huggingface.co/mcp`
-- **Allowed Tools** — comma-separated tools, e.g. `brave_web_search, brave_local_search, brave_news_search`
+- **MCP Server Label** — e.g. `huggingface`
+- **MCP Server URL** — e.g. `https://huggingface.co/mcp`
+- **Allowed Tools** — comma-separated tools, e.g. `model_search`
 
 The app validates every integration before saving:
 
@@ -231,61 +229,49 @@ The app validates every integration before saving:
 - empty labels, URLs, and tools are rejected.
 - duplicate integrations with the same label and URL are rejected.
 
-Normal Local AI chat uses:
-
-- endpoint: `/v1/chat/completions`
-- payload: OpenAI-compatible `messages[]`
-
-By default Ephemeral MCP has two routed integrations:
-
-1. **General Web Search** — Brave Search MCP (`brave-search`) for news, companies, sports, current events, websites, prices, trends and general facts. Brave is selected because the official Brave MCP server supports HTTP transport and has web/local/news tools. DuckDuckGo can be selected in the GUI as a fallback provider.
-2. **HuggingFace MCP** — `huggingface` for AI/ML resources only: models, datasets, Spaces, papers and Hugging Face docs. HuggingFace MCP is **not** a general web search engine.
-
-Tool routing is intentionally conservative: web/current/company/sports/people/price queries route to web search first; HuggingFace only receives AI/ML/model/dataset/paper/docs intents. Raw tool traces and search JSON are not serialized back into the model history—only user text and final assistant text are kept.
-
-When Ephemeral MCP mode is enabled, Local AI requests go to:
+When Ephemeral MCP mode has at least one valid integration, Local AI requests go to:
 
 ```text
-http://localhost:1234/api/v1/chat
+http://localhost:1234/v1/chat/completions
 ```
 
-and use `input` plus `integrations`:
+and include:
 
 ```json
 {
-  "model": "qwen3-coder-next",
-  "input": "What is the top trending model on hugging face?",
   "integrations": [
     {
       "type": "ephemeral_mcp",
-      "server_label": "brave-search",
-      "server_url": "http://10.5.0.2:8000/mcp",
-      "allowed_tools": ["brave_web_search", "brave_local_search", "brave_news_search"]
+      "server_label": "huggingface",
+      "server_url": "https://huggingface.co/mcp",
+      "allowed_tools": ["model_search"]
     }
   ]
 }
 ```
 
-If MCP is disabled or Local MCP Config mode is selected, the app uses the existing OpenAI-compatible Local AI request path.
+If MCP is disabled or the integration list is empty, the app falls back to the existing Local AI request path.
 
 #### Example curl
 
 ```bash
-curl http://localhost:1234/api/v1/chat \
+curl http://localhost:1234/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "qwen3-coder-next",
-    "input": "What is the top trending model on hugging face?",
+    "model": "ibm/granite-4-micro",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the top trending model on Hugging Face?"
+      }
+    ],
     "integrations": [
       {
         "type": "ephemeral_mcp",
-        "server_label": "brave-search",
-        "server_url": "http://10.5.0.2:8000/mcp",
-        "allowed_tools": [
-          "brave_web_search",
-          "brave_local_search",
-          "brave_news_search"
-        ]
+        "server_label": "huggingface",
+        "server_url": "https://huggingface.co/mcp",
+        "allowed_tools": ["model_search"]
       }
     ]
   }'
@@ -294,19 +280,15 @@ curl http://localhost:1234/api/v1/chat \
 ### Why this design
 
 - OpenAI cloud and Local AI remain isolated, preventing Local AI tokens or MCP metadata from leaking to OpenAI.
-- Normal Local AI stays on `/v1/chat/completions`; only Ephemeral MCP branches to `/api/v1/chat`.
-- Ephemeral integrations are stored as JSON and serialized into LM Studio's `input` + `integrations` API shape at the provider boundary.
-- The provider parses LM Studio `/api/v1/chat` output arrays and only returns final `message.content`; `tool_call` JSON is never sent to users.
-- Brave/DDG handles general internet search, while HuggingFace is scoped to AI-specific resources only.
+- Existing Local AI behavior remains the default fallback, so disabling MCP is non-breaking.
+- Ephemeral integrations are stored as JSON and normalized at the provider boundary for deterministic requests.
 - GUI validation catches unsafe or broken integration data before runtime.
 
 ### TODO
 
 - Add a live “test integration” button that calls LM Studio with a short prompt.
-- Surface LM Studio `/api/v1/chat` response metadata in the admin health view.
+- Surface LM Studio `/v1/chat/completions` response metadata in the admin health view.
 - Add import/export for reusable MCP integration presets.
-- Add a one-click Brave MCP local launcher/check once deployment packaging is finalized.
-- Add provider-specific health checks for Brave/DDG MCP endpoints.
 
 ## Branding / Visual Settings
 

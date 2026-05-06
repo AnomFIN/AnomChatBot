@@ -521,7 +521,7 @@ describe('PUT /api/settings — Local AI, MCP, and branding validation', () => {
     expect(JSON.parse(res.body).error).toContain('duplicate integration');
   });
 
-  it('rejects SVG chat backgrounds, logos larger than 3MB, and backgrounds larger than 5MB', async () => {
+  it('rejects SVG chat backgrounds and branding payloads larger than 3MB', async () => {
     const svgBackground = `data:image/svg+xml;base64,${Buffer.from('<svg></svg>').toString('base64')}`;
     const svgRes = await fastify.inject({
       method: 'PUT',

@@ -1,6 +1,7 @@
 import { getConversation, updateConversationSettings } from '../persistence/conversations.js';
 import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
-import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, VALID_LOCAL_AI_MCP_MODES, VALID_WEB_SEARCH_PROVIDERS, redactSecret } from '../config/index.js';
+import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, VALID_LOCAL_AI_MCP_MODES, redactSecret } from '../config/index.js';
+import { normalizeEphemeralMcpIntegrations } from '../ai/provider.js';
 
 const MAX_LOGO_DATA_BYTES = 3 * 1024 * 1024;
 const MAX_BACKGROUND_DATA_BYTES = 5 * 1024 * 1024;
@@ -68,9 +69,6 @@ export default async function settingsRoutes(fastify, opts) {
     if (localEnabled && tokenEnabled && body.local_ai_permission_token !== undefined && !String(body.local_ai_permission_token).trim()) {
       errors.push('LM Studio Permission Token is required when token usage is enabled');
     }
-    if (body.default_web_search_provider !== undefined && !VALID_WEB_SEARCH_PROVIDERS.includes(String(body.default_web_search_provider).toLowerCase())) {
-      errors.push(`Default Web Search Provider must be one of: ${VALID_WEB_SEARCH_PROVIDERS.join(', ')}`);
-    }
     if (body.local_ai_mcp_mode !== undefined && !VALID_LOCAL_AI_MCP_MODES.includes(mcpMode)) {
       errors.push(`MCP Mode must be one of: ${VALID_LOCAL_AI_MCP_MODES.join(', ')}`);
     }
@@ -107,7 +105,6 @@ export default async function settingsRoutes(fastify, opts) {
       'local_ai_enabled', 'local_ai_provider', 'local_ai_base_url', 'local_ai_model',
       'local_ai_use_permission_token', 'local_ai_permission_token',
       'local_ai_mcp_enabled', 'local_ai_mcp_mode', 'local_ai_mcp_config_path', 'local_ai_mcp_integrations',
-      'default_web_search_provider', 'web_search_enabled',
       'branding_top_bar_logo', 'branding_chat_background',
     ];
 
@@ -132,9 +129,18 @@ export default async function settingsRoutes(fastify, opts) {
 
     if (updates.local_ai_mcp_mode !== undefined) {
       updates.local_ai_mcp_enabled = updates.local_ai_mcp_mode === 'disabled' ? 'false' : 'true';
+    } else if (updates.local_ai_mcp_enabled !== undefined) {
+      // Legacy clients that only send enabled/disabled: derive and persist the mode for forward compat.
+      const enabled = updates.local_ai_mcp_enabled === true || updates.local_ai_mcp_enabled === 'true' || updates.local_ai_mcp_enabled === '1';
+      updates.local_ai_mcp_mode = enabled ? 'local_config' : 'disabled';
     }
-    if (updates.local_ai_mcp_integrations !== undefined && typeof updates.local_ai_mcp_integrations !== 'string') {
-      updates.local_ai_mcp_integrations = JSON.stringify(updates.local_ai_mcp_integrations);
+    if (updates.local_ai_mcp_integrations !== undefined) {
+      const mode = updates.local_ai_mcp_mode;
+      if (mode === undefined || mode === 'ephemeral') {
+        updates.local_ai_mcp_integrations = JSON.stringify(normalizeEphemeralMcpIntegrations(updates.local_ai_mcp_integrations));
+      } else if (typeof updates.local_ai_mcp_integrations !== 'string') {
+        updates.local_ai_mcp_integrations = JSON.stringify(updates.local_ai_mcp_integrations);
+      }
     }
 
     setSettingsBulk(updates);
@@ -379,6 +385,70 @@ function validateEphemeralMcpIntegrations(value) {
       if (seen.has(key)) errors.push(`${prefix}: duplicate integration for this server label and URL`);
       seen.add(key);
     }
+  });
+
+  return errors;
+}
+
+function parseIntegrationArray(value, errors) {
+  if (Array.isArray(value)) return value;
+  if (value === undefined || value === null || value === '') return [];
+  if (typeof value !== 'string') {
+    errors.push('local_ai_mcp_integrations must be a JSON array');
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      errors.push('local_ai_mcp_integrations must be a JSON array');
+      return [];
+    }
+    return parsed;
+  } catch {
+    errors.push('local_ai_mcp_integrations must be valid JSON');
+    return [];
+  }
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+
+function normalizeMcpMode(mode, legacyEnabled) {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (normalized) return normalized;
+  return legacyEnabled === true || legacyEnabled === 'true' || legacyEnabled === '1' ? 'local_config' : 'disabled';
+}
+
+function validateEphemeralMcpIntegrations(value) {
+  const errors = [];
+  const integrations = parseIntegrationArray(value, errors);
+  if (errors.length > 0) return errors;
+  if (integrations.length === 0) return ['At least one Ephemeral MCP integration is required'];
+
+  const seen = new Set();
+  integrations.forEach((integration, index) => {
+    const prefix = `Integration ${index + 1}`;
+    const serverLabel = String(integration?.server_label ?? integration?.serverLabel ?? '').trim();
+    const serverUrl = String(integration?.server_url ?? integration?.serverUrl ?? '').trim();
+    const allowedTools = Array.isArray(integration?.allowed_tools ?? integration?.allowedTools)
+      ? (integration.allowed_tools ?? integration.allowedTools).map(tool => String(tool).trim()).filter(Boolean)
+      : String(integration?.allowed_tools ?? integration?.allowedTools ?? '').split(',').map(tool => tool.trim()).filter(Boolean);
+
+    if (!serverLabel) errors.push(`${prefix}: server label is required`);
+    if (!serverUrl) errors.push(`${prefix}: server URL is required`);
+    else if (!isValidHttpUrl(serverUrl)) errors.push(`${prefix}: server_url must be a valid http(s) URL`);
+    if (allowedTools.length === 0) errors.push(`${prefix}: allowed_tools must not be empty`);
+
+    const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}`;
+    if (seen.has(key)) errors.push(`${prefix}: duplicate integration for this server label and URL`);
+    seen.add(key);
   });
 
   return errors;

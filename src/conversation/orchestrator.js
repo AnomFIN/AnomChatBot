@@ -19,7 +19,7 @@ import { buildMessages } from './promptBuilder.js';
 import { createDelayManager } from './delayManager.js';
 import { createPresenceManager } from './presenceManager.js';
 import { createApproachManager } from './approachManager.js';
-import { createAIProvider } from '../ai/provider.js';
+import { createAIProvider, normalizeEphemeralMcpIntegrations } from '../ai/provider.js';
 import { downloadAndStore } from '../media/storage.js';
 
 /**
@@ -130,6 +130,10 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
     const localAiEnabled = isTruthy(settings.local_ai_enabled);
     if (localAiEnabled) {
+      const mcpMode = settings.local_ai_mcp_mode || (isTruthy(settings.local_ai_mcp_enabled) ? 'local_config' : 'disabled');
+      const normalizedIntegrations = mcpMode === 'ephemeral'
+        ? normalizeEphemeralMcpIntegrations(settings.local_ai_mcp_integrations || '[]')
+        : [];
       const localAi = {
         enabled: true,
         provider: settings.local_ai_provider || 'lmstudio',
@@ -138,11 +142,12 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
         usePermissionToken: isTruthy(settings.local_ai_use_permission_token),
         permissionToken: settings.local_ai_permission_token || config.ai.localAi?.permissionToken || '',
         mcpEnabled: isTruthy(settings.local_ai_mcp_enabled),
-        mcpMode: settings.local_ai_mcp_mode || (isTruthy(settings.local_ai_mcp_enabled) ? 'ephemeral' : 'disabled'),
+        mcpMode,
         mcpConfigPath: settings.local_ai_mcp_config_path || '.mcp.json',
-        mcpIntegrations: settings.local_ai_mcp_integrations || JSON.stringify(getDefaultEphemeralMcpIntegrations()),
+        mcpIntegrations: normalizedIntegrations,
       };
-      const cacheKey = `global|local|${localAi.provider}|${localAi.baseUrl}|${localAi.model}|token:${localAi.usePermissionToken}|mcp:${localAi.mcpMode}:${localAi.mcpConfigPath}:${localAi.mcpIntegrations}`;
+      const integrationsKey = mcpMode === 'ephemeral' ? JSON.stringify(normalizedIntegrations) : '';
+      const cacheKey = `global|local|${localAi.provider}|${localAi.baseUrl}|${localAi.model}|token:${localAi.usePermissionToken}|mcp:${mcpMode}:${localAi.mcpConfigPath}:${integrationsKey}`;
       if (conversationProviders.has(cacheKey)) return conversationProviders.get(cacheKey);
 
       try {

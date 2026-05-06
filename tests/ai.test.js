@@ -329,10 +329,10 @@ describe('AI Provider — Local AI / LM Studio', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('uses LM Studio /api/v1/chat with input and integrations for Ephemeral MCP mode', async () => {
+  it('keeps LM Studio /v1/chat/completions and adds integrations for Ephemeral MCP mode', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ output: [{ type: 'message', content: 'ephemeral ok' }], usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 } }),
+      json: async () => ({ choices: [{ message: { content: 'ephemeral ok' } }], usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 } }),
     });
 
     const provider = createAIProvider(makeConfig({
@@ -348,133 +348,28 @@ describe('AI Provider — Local AI / LM Studio', () => {
           type: 'ephemeral_mcp',
           server_label: 'huggingface',
           server_url: 'https://huggingface.co/mcp',
-          allowed_tools: ['hub_repo_search'],
+          allowed_tools: ['model_search'],
         }],
       },
     }));
 
-    const result = await provider.generateReply([
-      { role: 'system', content: 'You are a helpful assistant.' },
-      { role: 'user', content: 'Hello' },
-      { role: 'assistant', content: 'Hi!' },
-      { role: 'user', content: 'Top model?' },
-    ]);
+    const result = await provider.generateReply([{ role: 'user', content: 'Top model?' }]);
     const [, request] = global.fetch.mock.calls[0];
     const body = JSON.parse(request.body);
 
     expect(result.content).toBe('ephemeral ok');
-    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/api/v1/chat', expect.any(Object));
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/v1/chat/completions', expect.any(Object));
     expect(request.headers.Authorization).toBe('Bearer lmstudio-token');
-    expect(body.messages).toBeUndefined();
-    expect(body.model).toBe('ibm/granite-4-micro');
-    expect(body.max_tokens).toBe(300);
-    expect(body.input).toContain('HuggingFace MCP is NOT a general web search engine.');
-    expect(body.input).toContain('Conversation:\nUser: Hello\nAssistant: Hi!\nUser: Top model?');
-    expect(body.integrations).toEqual([{
-      type: 'ephemeral_mcp',
-      server_label: 'huggingface',
-      server_url: 'https://huggingface.co/mcp',
-      allowed_tools: ['hub_repo_search'],
-    }]);
-  });
-
-
-  it('parses LM Studio output arrays without leaking tool_call JSON', () => {
-    expect(normalizeLmStudioMessageContent({ output: [{ type: 'message', content: '  Hei maailma  ' }] })).toBe('Hei maailma');
-    expect(normalizeLmStudioMessageContent({ output: [
-      { type: 'tool_call', tool: 'brave_web_search', output: '[{"raw":true}]' },
-      { type: 'message', content: 'Lopullinen vastaus' },
-    ] })).toBe('Lopullinen vastaus');
-    expect(normalizeLmStudioMessageContent({ output: [
-      { type: 'tool_call', tool: 'brave_web_search' },
-      { type: 'message', content: '\n' },
-    ] })).toBe('Haku ei tuottanut suoraa vastausta. Kokeile tarkentaa hakua.');
-  });
-
-  it('parses output strings and JSON-string message arrays', () => {
-    expect(normalizeLmStudioMessageContent({ output: 'selkeä vastaus' })).toBe('selkeä vastaus');
-    expect(normalizeLmStudioMessageContent('[{"type":"tool_call","tool":"x"},{"type":"message","content":"vain sisältö"}]')).toBe('vain sisältö');
-    expect(normalizeLmStudioMessageContent({ output: [] })).toBe('En saanut muodostettua kunnollista vastausta. Kokeillaan uudelleen tarkemmalla kysymyksellä.');
-  });
-
-  it('routes sports and company queries to web search, not HuggingFace', async () => {
-    for (const query of ['NHL tulokset tänään', 'Oy yrityksen hallitus']) {
-      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ output: [{ type: 'message', content: 'web ok' }] }) });
-      const provider = createAIProvider(makeConfig({
-        localAi: {
-          enabled: true, provider: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', model: 'local-model', mcpMode: 'ephemeral',
-          mcpIntegrations: [
-            { server_label: 'brave-search', server_url: 'http://10.5.0.2:8000/mcp', allowed_tools: ['brave_web_search', 'brave_local_search', 'brave_news_search'] },
-            { server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['hub_repo_search', 'hf_doc_search'] },
-          ],
-        },
-      }));
-
-      await provider.generateReply([{ role: 'user', content: query }]);
-      const body = JSON.parse(global.fetch.mock.calls.at(-1)[1].body);
-      expect(body.integrations).toHaveLength(1);
-      expect(body.integrations[0].server_label).toBe('brave-search');
-      expect(body.input).toContain('General web search handles news');
-      expect(body.input).not.toContain('HuggingFace MCP is NOT a general web search engine.');
-    }
-  });
-
-  it('routes HuggingFace model and docs queries to HuggingFace MCP', async () => {
-    for (const query of ['Qwen3 model', 'Hugging Face docs embeddings']) {
-      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ output: [{ type: 'message', content: 'hf ok' }] }) });
-      const provider = createAIProvider(makeConfig({
-        localAi: {
-          enabled: true, provider: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', model: 'local-model', mcpMode: 'ephemeral',
-          mcpIntegrations: [
-            { server_label: 'brave-search', server_url: 'http://10.5.0.2:8000/mcp', allowed_tools: ['brave_web_search'] },
-            { server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['hub_repo_search', 'hf_doc_search'] },
-          ],
-        },
-      }));
-
-      await provider.generateReply([{ role: 'user', content: query }]);
-      const body = JSON.parse(global.fetch.mock.calls.at(-1)[1].body);
-      expect(body.integrations).toHaveLength(1);
-      expect(body.integrations[0].server_label).toBe('huggingface');
-      expect(body.input).toContain('HuggingFace MCP is NOT a general web search engine.');
-    }
-  });
-
-
-  it('falls back to normal Local AI chat when only HuggingFace exists for a sports query', async () => {
-    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: 'normal ok' } }] }) });
-    const provider = createAIProvider(makeConfig({
-      localAi: {
-        enabled: true,
-        provider: 'lmstudio',
-        baseUrl: 'http://127.0.0.1:1234/v1',
-        model: 'local-model',
-        mcpMode: 'ephemeral',
-        mcpIntegrations: [{ server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['hub_repo_search'] }],
-      },
-    }));
-
-    await provider.generateReply([{ role: 'user', content: 'NHL tulokset' }]);
-    const [, request] = global.fetch.mock.calls.at(-1);
-    const body = JSON.parse(request.body);
-    expect(global.fetch.mock.calls.at(-1)[0]).toBe('http://127.0.0.1:1234/v1/chat/completions');
-    expect(body.integrations).toBeUndefined();
-  });
-
-
-  it('serializes system, user, and assistant history into LM Studio input', () => {
-    expect(serializeMessagesForLmStudioInput([
-      { role: 'system', content: 'You are a helpful assistant.' },
-      { role: 'user', content: 'Hello' },
-      { role: 'assistant', content: 'Hi!' },
-      { role: 'user', content: 'What are trending models on Hugging Face?' },
-    ])).toBe(`System:
-You are a helpful assistant.
-
-Conversation:
-User: Hello
-Assistant: Hi!
-User: What are trending models on Hugging Face?`);
+    expect(body).toMatchObject({
+      model: 'ibm/granite-4-micro',
+      messages: [{ role: 'user', content: 'Top model?' }],
+      integrations: [{
+        type: 'ephemeral_mcp',
+        server_label: 'huggingface',
+        server_url: 'https://huggingface.co/mcp',
+        allowed_tools: ['model_search'],
+      }],
+    });
   });
 
 
@@ -499,22 +394,22 @@ User: What are trending models on Hugging Face?`);
             type: 'ephemeral_mcp',
             server_label: 'huggingface',
             server_url: 'https://huggingface.co/mcp',
-            allowed_tools: ['hub_repo_search'],
+            allowed_tools: ['model_search'],
           }],
         },
       }),
       logger,
     });
 
-    await provider.generateReply([{ role: 'user', content: 'Hugging Face docs' }]);
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
 
     expect(logger.debug).toHaveBeenCalledWith(
       {
         localAi: {
-          endpoint: 'http://127.0.0.1:1234/api/v1/chat',
-          usesLmStudioApi: true,
-          mcpMode: 'ephemeral',
+          endpoint: 'http://127.0.0.1:1234/v1/chat/completions',
           integrationsCount: 1,
+          mcpEnabled: true,
+          mcpMode: 'ephemeral',
         },
       },
       'Local AI request prepared',
@@ -522,7 +417,7 @@ User: What are trending models on Hugging Face?`);
     expect(JSON.stringify(logger.debug.mock.calls)).not.toContain('must-not-log');
   });
 
-  it('uses existing Local AI path when MCP is not Ephemeral MCP', async () => {
+  it('falls back to existing Local AI path when Ephemeral MCP has no integrations', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ choices: [{ message: { content: 'fallback ok' } }] }),
@@ -535,47 +430,12 @@ User: What are trending models on Hugging Face?`);
         baseUrl: 'http://127.0.0.1:1234/v1',
         model: 'local-model',
         usePermissionToken: false,
-        mcpMode: 'local_config',
+        mcpMode: 'ephemeral',
       },
     }));
 
     await provider.generateReply([{ role: 'user', content: 'Hi' }]);
     expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/v1/chat/completions', expect.any(Object));
-  });
-
-  it('normalizeLmStudioApiChatResponse computes total from prompt+completion when total_tokens is absent', () => {
-    const result = normalizeLmStudioApiChatResponse({
-      output: [{ type: 'message', content: 'hi' }],
-      usage: { input_tokens: 8, output_tokens: 4 },
-    });
-    expect(result.tokenUsage).toEqual({ prompt: 8, completion: 4, total: 12 });
-  });
-
-  it('normalizeLmStudioApiChatResponse uses total_tokens when present', () => {
-    const result = normalizeLmStudioApiChatResponse({
-      output: [{ type: 'message', content: 'hi' }],
-      usage: { input_tokens: 8, output_tokens: 4, total_tokens: 15 },
-    });
-    expect(result.tokenUsage).toEqual({ prompt: 8, completion: 4, total: 15 });
-  });
-
-  it('normalizeEphemeralMcpIntegrations merges allowed_tools for same server_label+server_url', () => {
-    const result = normalizeEphemeralMcpIntegrations([
-      { server_label: 'brave', server_url: 'http://localhost:8000/mcp', allowed_tools: ['brave_web_search'] },
-      { server_label: 'brave', server_url: 'http://localhost:8000/mcp', allowed_tools: ['brave_news_search'] },
-    ]);
-    expect(result).toHaveLength(1);
-    expect(result[0].allowed_tools).toHaveLength(2);
-    expect(result[0].allowed_tools).toEqual(expect.arrayContaining(['brave_web_search', 'brave_news_search']));
-    expect(result[0].server_label).toBe('brave');
-  });
-
-  it('normalizeEphemeralMcpIntegrations keeps distinct entries with different label or url', () => {
-    const result = normalizeEphemeralMcpIntegrations([
-      { server_label: 'brave', server_url: 'http://localhost:8000/mcp', allowed_tools: ['brave_web_search'] },
-      { server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['hub_repo_search'] },
-    ]);
-    expect(result).toHaveLength(2);
   });
 
 });

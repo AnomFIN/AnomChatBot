@@ -13,13 +13,6 @@ const MCP_MODES = [
 ];
 
 const EMPTY_INTEGRATION_FORM = { server_label: '', server_url: '', allowed_tools: '' };
-const DEFAULT_LOCAL_AI_BASE_URL = 'http://10.5.0.2:1234/v1';
-const DEFAULT_LOCAL_AI_MODEL = 'qwen3-coder-next';
-const DEFAULT_WEB_SEARCH_PROVIDER = 'brave';
-const DEFAULT_INTEGRATIONS = [
-  { type: 'ephemeral_mcp', server_label: 'brave-search', server_url: 'http://10.5.0.2:8000/mcp', allowed_tools: ['brave_web_search', 'brave_local_search', 'brave_news_search'] },
-  { type: 'ephemeral_mcp', server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['hub_repo_search', 'hub_repo_details', 'paper_search', 'hf_doc_search', 'hf_doc_fetch'] },
-];
 
 export default function GlobalSettings({ status, onBrandingChange }) {
   const [settings, setSettings] = useState(null);
@@ -28,7 +21,6 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
   const [integrationForm, setIntegrationForm] = useState(EMPTY_INTEGRATION_FORM);
-  const [brandingDrafts, setBrandingDrafts] = useState(() => createEmptyBrandingDrafts());
 
   useEffect(() => {
     loadSettings();
@@ -37,10 +29,8 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const loadSettings = async () => {
     try {
       const data = await getGlobalSettings();
-      const hydrated = hydrateSettings(data);
-      setSettings(hydrated);
-      setBrandingDrafts(createBrandingDraftsFromSettings(hydrated));
-      onBrandingChange?.(hydrated);
+      setSettings(hydrateSettings(data));
+      onBrandingChange?.(data);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -95,25 +85,68 @@ export default function GlobalSettings({ status, onBrandingChange }) {
     handleChange('local_ai_mcp_integrations', JSON.stringify(next));
   };
 
+  const handleBrandingChange = (key, value) => {
+    setSettings(prev => {
+      const next = { ...prev, [key]: value };
+      onBrandingChange?.(next);
+      return next;
+    });
+    setSaved(false);
+  };
+
+  const handleIntegrationFormChange = (key, value) => {
+    setIntegrationForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleAddIntegration = () => {
+    setError(null);
+    const nextIntegration = normalizeIntegrationForm(integrationForm);
+    const validationError = validateIntegration(nextIntegration);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const current = parseIntegrations(settings.local_ai_mcp_integrations);
+    const duplicate = current.some(item =>
+      item.server_label.toLowerCase() === nextIntegration.server_label.toLowerCase()
+      && item.server_url.toLowerCase() === nextIntegration.server_url.toLowerCase(),
+    );
+    if (duplicate) {
+      setError('Duplicate MCP integration: same server label and URL already exists.');
+      return;
+    }
+
+    handleChange('local_ai_mcp_integrations', JSON.stringify([...current, nextIntegration]));
+    setIntegrationForm(EMPTY_INTEGRATION_FORM);
+  };
+
+  const handleRemoveIntegration = (index) => {
+    const current = parseIntegrations(settings.local_ai_mcp_integrations);
+    const next = current.filter((_, itemIndex) => itemIndex !== index);
+    handleChange('local_ai_mcp_integrations', JSON.stringify(next));
+  };
+
   const handleBrandingFileSelect = async (event, key, allowedTypes, maxBytes) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
 
     if (!allowedTypes.has(file.type)) {
-      setBrandingDraft(key, { error: getBrandingTypeError(key), filename: file.name, previewDataUrl: null });
+      setError(key === 'branding_chat_background' ? 'Chat background must be PNG, JPEG, or WebP.' : 'Logo must be PNG, JPEG, WebP, or SVG.');
       return;
     }
-    if (file.size > maxBytes) {
-      setBrandingDraft(key, { error: `${getBrandingLabel(key)} must be ${formatBytes(maxBytes)} or smaller.`, filename: file.name, previewDataUrl: null });
+    if (file.size > MAX_BRANDING_FILE_BYTES) {
+      setError('Branding images must be 3MB or smaller.');
       return;
     }
 
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      setBrandingDraft(key, { error: null, filename: file.name, previewDataUrl: dataUrl });
-    } catch {
-      setBrandingDraft(key, { error: 'Failed to read file.', filename: file.name, previewDataUrl: null });
+      handleBrandingChange(key, dataUrl);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -169,7 +202,6 @@ export default function GlobalSettings({ status, onBrandingChange }) {
       const data = await updateGlobalSettings(payload);
       const hydrated = hydrateSettings(data);
       setSettings(hydrated);
-      setBrandingDrafts(createBrandingDraftsFromSettings(hydrated));
       onBrandingChange?.(hydrated);
       setSaved(true);
     } catch (err) {
@@ -184,7 +216,6 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const localAiEnabled = isTrue(settings?.local_ai_enabled);
   const mcpMode = settings?.local_ai_mcp_mode || (isTrue(settings?.local_ai_mcp_enabled) ? 'local_config' : 'disabled');
   const integrations = parseIntegrations(settings?.local_ai_mcp_integrations);
-  const defaultWebProvider = settings?.default_web_search_provider || DEFAULT_WEB_SEARCH_PROVIDER;
 
   return (
     <div className="global-settings">
@@ -244,7 +275,6 @@ export default function GlobalSettings({ status, onBrandingChange }) {
 
           <div className="gs-section settings-card">
             <h4>Local AI / LM Studio</h4>
-            <span className="field-hint">Uses OpenAI-compatible endpoint /v1/chat/completions. Default Local AI is ON for LM Studio.</span>
             <label className="toggle-label"><input type="checkbox" checked={localAiEnabled} onChange={e => handleChange('local_ai_enabled', e.target.checked ? 'true' : 'false')} /> Enable Local AI</label>
             <label>Local AI Provider
               <select value={settings.local_ai_provider || 'lmstudio'} onChange={e => handleChange('local_ai_provider', e.target.value)}>
@@ -267,12 +297,61 @@ export default function GlobalSettings({ status, onBrandingChange }) {
             <div className="gs-section settings-card mcp-card">
               <h4>MCP Mode</h4>
               <span className="field-hint">MCP is Local AI / LM Studio only. OpenAI cloud never receives integrations.</span>
-              <label>Default Web Search Provider
-                <select value={defaultWebProvider} onChange={e => handleChange('default_web_search_provider', e.target.value)}>
-                  <option value="brave">Brave</option>
-                  <option value="duckduckgo">DuckDuckGo</option>
-                  <option value="disabled">Disabled</option>
+              <label>MCP Mode
+                <select value={mcpMode} onChange={e => handleMcpModeChange(e.target.value)}>
+                  {MCP_MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
+              </label>
+
+              {mcpMode === 'local_config' && (
+                <>
+                  <div className="mcp-status">Local config · existing .mcp.json flow</div>
+                  <label>MCP config path
+                    <input type="text" value={settings.local_ai_mcp_config_path || '.mcp.json'} onChange={e => handleChange('local_ai_mcp_config_path', e.target.value)} />
+                  </label>
+                </>
+              )}
+
+              {mcpMode === 'ephemeral' && (
+                <div className="mcp-integrations-ui">
+                  <div className="mcp-status mcp-status-live">LM Studio /v1/chat/completions integrations</div>
+                  <div className="mcp-integration-form">
+                    <label>MCP Server Label
+                      <input type="text" value={integrationForm.server_label} placeholder="huggingface" onChange={e => handleIntegrationFormChange('server_label', e.target.value)} />
+                    </label>
+                    <label>MCP Server URL
+                      <input type="url" value={integrationForm.server_url} placeholder="https://huggingface.co/mcp" onChange={e => handleIntegrationFormChange('server_url', e.target.value)} />
+                    </label>
+                    <label>Allowed Tools
+                      <input type="text" value={integrationForm.allowed_tools} placeholder="model_search, dataset_search" onChange={e => handleIntegrationFormChange('allowed_tools', e.target.value)} />
+                    </label>
+                    <button type="button" className="secondary-btn" onClick={handleAddIntegration}>Add Integration</button>
+                  </div>
+
+                  <div className="mcp-integration-list">
+                    {integrations.length === 0 ? (
+                      <div className="field-hint">No integrations yet. Add at least one server before saving Ephemeral MCP mode.</div>
+                    ) : integrations.map((integration, index) => (
+                      <div className="mcp-integration-card" key={`${integration.server_label}-${integration.server_url}`}>
+                        <div>
+                          <strong>{integration.server_label}</strong>
+                          <span>{integration.server_url}</span>
+                          <small>{integration.allowed_tools.join(', ')}</small>
+                        </div>
+                        <button type="button" className="secondary-btn danger-lite" onClick={() => handleRemoveIntegration(index)}>Remove Integration</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="gs-section settings-card">
+            <h4>Branding / Visual Settings</h4>
+            <div className="branding-controls">
+              <label>Top bar logo
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={e => handleBrandingUpload(e, 'branding_top_bar_logo', LOGO_TYPES)} />
               </label>
               <span className="field-hint">General web search handles news, companies, sports, current events and websites.</span>
               <span className="field-hint">HuggingFace integration is only for AI-related resources.</span>
@@ -386,17 +465,10 @@ function InfoCard({ title, rows }) {
 }
 
 function hydrateSettings(data) {
-  const integrations = parseIntegrations(data.local_ai_mcp_integrations);
   return {
     ...data,
-    local_ai_enabled: data.local_ai_enabled ?? 'true',
-    local_ai_base_url: data.local_ai_base_url || DEFAULT_LOCAL_AI_BASE_URL,
-    local_ai_model: data.local_ai_model || DEFAULT_LOCAL_AI_MODEL,
-    local_ai_mcp_mode: data.local_ai_mcp_mode || (isTrue(data.local_ai_mcp_enabled) ? 'ephemeral' : 'ephemeral'),
-    local_ai_mcp_enabled: data.local_ai_mcp_enabled ?? 'true',
-    local_ai_mcp_integrations: JSON.stringify(integrations.length > 0 ? integrations : DEFAULT_INTEGRATIONS),
-    default_web_search_provider: data.default_web_search_provider || DEFAULT_WEB_SEARCH_PROVIDER,
-    web_search_enabled: data.web_search_enabled ?? 'true',
+    local_ai_mcp_mode: data.local_ai_mcp_mode || (isTrue(data.local_ai_mcp_enabled) ? 'local_config' : 'disabled'),
+    local_ai_mcp_integrations: JSON.stringify(parseIntegrations(data.local_ai_mcp_integrations)),
   };
 }
 
@@ -456,82 +528,6 @@ function isValidUrl(value) {
   } catch {
     return false;
   }
-}
-
-function BrandingUploadCard({
-  title,
-  hint,
-  inputId,
-  accept,
-  currentDataUrl,
-  draft,
-  fallback,
-  backgroundPreview = false,
-  onSelect,
-  onApply,
-  onReset,
-  saving,
-}) {
-  const previewDataUrl = draft?.previewDataUrl || currentDataUrl;
-  const canApply = Boolean(draft?.previewDataUrl) && draft.previewDataUrl !== currentDataUrl && !draft.error && !saving;
-  const canReset = Boolean(currentDataUrl) && !saving;
-
-  return (
-    <div className="branding-upload-card">
-      <div className="branding-upload-header">
-        <div>
-          <strong>{title}</strong>
-          <span>{hint}</span>
-        </div>
-      </div>
-      <div
-        className={`branding-upload-preview ${backgroundPreview ? 'is-background' : 'is-logo'}`}
-        style={previewDataUrl && backgroundPreview ? { '--branding-preview-image': `url(${previewDataUrl})` } : undefined}
-      >
-        {previewDataUrl ? (
-          backgroundPreview ? <span>Background preview</span> : <img src={previewDataUrl} alt={`${title} preview`} />
-        ) : fallback}
-      </div>
-      <div className="branding-file-row">
-        <label className="secondary-btn branding-file-button" htmlFor={inputId}>Choose file</label>
-        <input id={inputId} className="branding-file-input" type="file" accept={accept} onChange={onSelect} />
-        <span className="branding-filename">{draft?.filename || 'No file selected'}</span>
-      </div>
-      {draft?.error && <div className="settings-error branding-error">{draft.error}</div>}
-      <div className="branding-actions">
-        <button type="button" className="secondary-btn" onClick={onApply} disabled={!canApply}>Apply</button>
-        <button type="button" className="secondary-btn danger-lite" onClick={onReset} disabled={!canReset}>Reset</button>
-      </div>
-    </div>
-  );
-}
-
-function createEmptyBrandingDrafts() {
-  return {
-    branding_top_bar_logo: { filename: '', previewDataUrl: null, error: null },
-    branding_chat_background: { filename: '', previewDataUrl: null, error: null },
-  };
-}
-
-function createBrandingDraftsFromSettings(settings) {
-  return {
-    branding_top_bar_logo: { filename: '', previewDataUrl: settings.branding_top_bar_logo || null, error: null },
-    branding_chat_background: { filename: '', previewDataUrl: settings.branding_chat_background || null, error: null },
-  };
-}
-
-function getBrandingTypeError(key) {
-  return key === 'branding_chat_background'
-    ? 'Unsupported file type. Background must be PNG, JPG, JPEG, or WEBP.'
-    : 'Unsupported file type. Logo must be PNG, JPG, JPEG, WEBP, or SVG.';
-}
-
-function getBrandingLabel(key) {
-  return key === 'branding_chat_background' ? 'Chat background image' : 'Top bar logo';
-}
-
-function formatBytes(bytes) {
-  return `${Math.round(bytes / 1024 / 1024)}MB`;
 }
 
 function readFileAsDataUrl(file) {

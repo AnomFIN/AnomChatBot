@@ -13,7 +13,6 @@ export const VALID_WHATSAPP_MODES = ['cloud_api', 'baileys'];
 export const VALID_AI_PROVIDERS = ['openai', 'openai_compatible'];
 export const VALID_LOCAL_AI_PROVIDERS = ['lmstudio'];
 export const VALID_LOCAL_AI_MCP_MODES = ['disabled', 'local_config', 'ephemeral'];
-export const VALID_WEB_SEARCH_PROVIDERS = ['brave', 'duckduckgo', 'disabled'];
 export const VALID_LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
 export const VALID_AI_APPROACH_MAX_MESSAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export const VALID_AI_APPROACH_DELAY_MINUTES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440];
@@ -48,44 +47,12 @@ export function redactSecret(value) {
   return value.slice(0, 4) + '...' + value.slice(-3);
 }
 
-function isValidHttpUrlString(value) {
+function isJsonArray(value) {
   try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    return Array.isArray(JSON.parse(value));
   } catch {
     return false;
   }
-}
-
-function validateMcpIntegrationsEnv(value) {
-  let parsed;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    return ['LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral'];
-  }
-  if (!Array.isArray(parsed)) {
-    return ['LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral'];
-  }
-  if (parsed.length === 0) {
-    return ['LOCAL_AI_MCP_INTEGRATIONS must not be empty when LOCAL_AI_MCP_MODE=ephemeral'];
-  }
-  const errs = [];
-  for (let i = 0; i < parsed.length; i++) {
-    const item = parsed[i];
-    const prefix = `LOCAL_AI_MCP_INTEGRATIONS[${i}]`;
-    const serverLabel = String(item?.server_label ?? '').trim();
-    const serverUrl = String(item?.server_url ?? '').trim();
-    const allowedToolsRaw = item?.allowed_tools ?? [];
-    const allowedTools = Array.isArray(allowedToolsRaw)
-      ? allowedToolsRaw.map(t => String(t).trim()).filter(Boolean)
-      : String(allowedToolsRaw).split(',').map(t => t.trim()).filter(Boolean);
-    if (!serverLabel) errs.push(`${prefix}: server_label is required`);
-    if (!serverUrl) errs.push(`${prefix}: server_url is required`);
-    else if (!isValidHttpUrlString(serverUrl)) errs.push(`${prefix}: server_url must be a valid http(s) URL`);
-    if (allowedTools.length === 0) errs.push(`${prefix}: allowed_tools must not be empty`);
-  }
-  return errs;
 }
 
 function getVersion() {
@@ -141,14 +108,11 @@ export function validateConfig(env) {
   const localAiModel = env.LOCAL_AI_MODEL || DEFAULT_LOCAL_AI_MODEL;
   const localAiUsePermissionToken = parseBoolean(env.LOCAL_AI_USE_PERMISSION_TOKEN, false);
   const localAiPermissionToken = env.LOCAL_AI_PERMISSION_TOKEN || '';
-  const webSearchProvider = (env.WEB_SEARCH_PROVIDER || DEFAULT_WEB_SEARCH_PROVIDER).toLowerCase().trim();
-  const webSearchEnabled = parseBoolean(env.WEB_SEARCH_ENABLED, webSearchProvider !== 'disabled');
-  const effectiveWebSearchProvider = webSearchEnabled ? webSearchProvider : 'disabled';
-  const localAiMcpEnabled = parseBoolean(env.LOCAL_AI_MCP_ENABLED, true);
+  const localAiMcpEnabled = parseBoolean(env.LOCAL_AI_MCP_ENABLED, false);
   const localAiMcpModeRaw = (env.LOCAL_AI_MCP_MODE || '').toLowerCase().trim();
-  const localAiMcpMode = localAiMcpModeRaw || (localAiMcpEnabled ? 'ephemeral' : 'disabled');
+  const localAiMcpMode = localAiMcpModeRaw || (localAiMcpEnabled ? 'local_config' : 'disabled');
   const localAiMcpConfigPath = env.LOCAL_AI_MCP_CONFIG_PATH || '.mcp.json';
-  const localAiMcpIntegrations = env.LOCAL_AI_MCP_INTEGRATIONS || JSON.stringify(getDefaultEphemeralMcpIntegrations(effectiveWebSearchProvider));
+  const localAiMcpIntegrations = env.LOCAL_AI_MCP_INTEGRATIONS || '[]';
 
   if (!VALID_LOCAL_AI_PROVIDERS.includes(localAiProvider)) {
     errors.push(`LOCAL_AI_PROVIDER must be one of: ${VALID_LOCAL_AI_PROVIDERS.join(', ')}`);
@@ -158,17 +122,14 @@ export function validateConfig(env) {
   if (localAiEnabled && localAiUsePermissionToken && !localAiPermissionToken) {
     warnings.push('LOCAL_AI_USE_PERMISSION_TOKEN=true but LOCAL_AI_PERMISSION_TOKEN is not set');
   }
-  if (!VALID_WEB_SEARCH_PROVIDERS.includes(effectiveWebSearchProvider)) {
-    errors.push(`WEB_SEARCH_PROVIDER must be one of: ${VALID_WEB_SEARCH_PROVIDERS.join(', ')}`);
-  }
   if (!VALID_LOCAL_AI_MCP_MODES.includes(localAiMcpMode)) {
     errors.push(`LOCAL_AI_MCP_MODE must be one of: ${VALID_LOCAL_AI_MCP_MODES.join(', ')}`);
   }
   if (localAiEnabled && localAiMcpMode === 'local_config' && !localAiMcpConfigPath) {
     errors.push('LOCAL_AI_MCP_CONFIG_PATH must not be empty when LOCAL_AI_MCP_MODE=local_config');
   }
-  if (localAiEnabled && localAiMcpMode === 'ephemeral') {
-    errors.push(...validateMcpIntegrationsEnv(localAiMcpIntegrations));
+  if (localAiEnabled && localAiMcpMode === 'ephemeral' && !isJsonArray(localAiMcpIntegrations)) {
+    errors.push('LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral');
   }
 
   if (!localAiEnabled && VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
@@ -266,10 +227,6 @@ export function validateConfig(env) {
         mcpMode: localAiMcpMode,
         mcpConfigPath: localAiMcpConfigPath,
         mcpIntegrations: localAiMcpIntegrations,
-      }),
-      webSearch: Object.freeze({
-        enabled: effectiveWebSearchProvider !== 'disabled',
-        provider: effectiveWebSearchProvider,
       }),
     }),
     whatsapp: Object.freeze({
