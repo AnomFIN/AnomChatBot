@@ -18,7 +18,7 @@ import { buildMessages } from './promptBuilder.js';
 import { createDelayManager } from './delayManager.js';
 import { createPresenceManager } from './presenceManager.js';
 import { createApproachManager } from './approachManager.js';
-import { createAIProvider } from '../ai/provider.js';
+import { createAIProvider, normalizeEphemeralMcpIntegrations } from '../ai/provider.js';
 import { downloadAndStore } from '../media/storage.js';
 
 /**
@@ -141,7 +141,10 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
         mcpConfigPath: settings.local_ai_mcp_config_path || '.mcp.json',
         mcpIntegrations: settings.local_ai_mcp_integrations || '[]',
       };
-      const cacheKey = `global|local|${localAi.provider}|${localAi.baseUrl}|${localAi.model}|token:${localAi.usePermissionToken}|mcp:${localAi.mcpMode}:${localAi.mcpConfigPath}:${localAi.mcpIntegrations}`;
+      const integrationsKey = localAi.mcpMode === 'ephemeral'
+        ? JSON.stringify(normalizeEphemeralMcpIntegrations(localAi.mcpIntegrations))
+        : '';
+      const cacheKey = `global|local|${localAi.provider}|${localAi.baseUrl}|${localAi.model}|token:${localAi.usePermissionToken}|mcp:${localAi.mcpMode}:${localAi.mcpConfigPath}:${integrationsKey}`;
       if (conversationProviders.has(cacheKey)) return conversationProviders.get(cacheKey);
 
       try {

@@ -234,8 +234,9 @@ export function normalizeMcpMode(value, legacyEnabled = false) {
 export function normalizeEphemeralMcpIntegrations(value) {
   const raw = typeof value === 'string' ? parseJsonArray(value) : value;
   if (!Array.isArray(raw)) return [];
-  const seen = new Set();
-  const normalized = [];
+
+  // Use a Map keyed by label|url to dedupe by server identity and merge tool lists.
+  const mergedMap = new Map();
 
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
@@ -247,19 +248,22 @@ export function normalizeEphemeralMcpIntegrations(value) {
       : String(allowedToolsRaw).split(',').map(tool => tool.trim()).filter(Boolean);
 
     if (!serverLabel || !serverUrl || allowedTools.length === 0 || !isValidUrl(serverUrl)) continue;
-    const dedupedTools = [...new Set(allowedTools)];
-    const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}|${dedupedTools.map(t => t.toLowerCase()).sort().join(',')}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    normalized.push({
-      type: 'ephemeral_mcp',
-      server_label: serverLabel,
-      server_url: serverUrl,
-      allowed_tools: dedupedTools,
-    });
+    const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}`;
+    if (mergedMap.has(key)) {
+      const existing = mergedMap.get(key);
+      const mergedTools = [...new Set([...existing.allowed_tools, ...allowedTools])];
+      mergedMap.set(key, { ...existing, allowed_tools: mergedTools });
+    } else {
+      mergedMap.set(key, {
+        type: 'ephemeral_mcp',
+        server_label: serverLabel,
+        server_url: serverUrl,
+        allowed_tools: [...new Set(allowedTools)],
+      });
+    }
   }
 
-  return normalized;
+  return [...mergedMap.values()];
 }
 
 export function buildLocalAIChatCompletionsBody({ model, messages, temperature, maxTokens, integrations = [] }) {

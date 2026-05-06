@@ -1,6 +1,7 @@
 import { getConversation, updateConversationSettings } from '../persistence/conversations.js';
 import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
 import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, VALID_LOCAL_AI_MCP_MODES, redactSecret } from '../config/index.js';
+import { normalizeEphemeralMcpIntegrations } from '../ai/provider.js';
 
 const MAX_BRANDING_DATA_BYTES = 3 * 1024 * 1024;
 const LOGO_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
@@ -127,9 +128,13 @@ export default async function settingsRoutes(fastify, opts) {
 
     if (updates.local_ai_mcp_mode !== undefined) {
       updates.local_ai_mcp_enabled = updates.local_ai_mcp_mode === 'disabled' ? 'false' : 'true';
+    } else if (updates.local_ai_mcp_enabled !== undefined) {
+      // Legacy clients that only send enabled/disabled: derive and persist the mode for forward compat.
+      const enabled = updates.local_ai_mcp_enabled === true || updates.local_ai_mcp_enabled === 'true' || updates.local_ai_mcp_enabled === '1';
+      updates.local_ai_mcp_mode = enabled ? 'local_config' : 'disabled';
     }
-    if (updates.local_ai_mcp_integrations !== undefined && typeof updates.local_ai_mcp_integrations !== 'string') {
-      updates.local_ai_mcp_integrations = JSON.stringify(updates.local_ai_mcp_integrations);
+    if (updates.local_ai_mcp_integrations !== undefined) {
+      updates.local_ai_mcp_integrations = JSON.stringify(normalizeEphemeralMcpIntegrations(updates.local_ai_mcp_integrations));
     }
 
     setSettingsBulk(updates);
