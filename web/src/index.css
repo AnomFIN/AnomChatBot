@@ -51,6 +51,8 @@ input, textarea, select {
 
 /* ── Status Bar ───────────────────────────────────────────────────────── */
 .status-bar {
+  position: relative;
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -73,6 +75,8 @@ input, textarea, select {
 
 /* ── Navigation ───────────────────────────────────────────────────────── */
 .app-nav {
+  position: relative;
+  z-index: 10;
   display: flex;
   gap: 2px;
   padding: 4px 8px;
@@ -305,6 +309,43 @@ input, textarea, select {
   flex-direction: column;
   position: relative;
   min-width: 0;
+  background: rgba(8, 11, 20, 0.24);
+}
+
+.chat-shell {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.chat-background-layer,
+.chat-background-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.chat-background-layer {
+  z-index: 0;
+  background-image: var(--chat-background-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.28;
+}
+
+.chat-background-overlay {
+  z-index: 1;
+  background: rgba(5, 10, 20, 0.72);
+}
+
+.chat-content {
+  position: relative;
+  z-index: 2;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-toggle {
@@ -317,7 +358,7 @@ input, textarea, select {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font-size: 12px;
-  z-index: 1;
+  z-index: 10;
   transition: all 0.2s ease;
   transform: scale(1);
 }
@@ -343,19 +384,25 @@ input, textarea, select {
 }
 
 .conversation-header {
+  position: relative;
+  z-index: 2;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
+  background: rgba(17, 24, 39, 0.78);
+  backdrop-filter: blur(14px);
 }
 
 .conversation-header h3 { font-size: 15px; }
 .conversation-header-meta { font-size: 12px; color: var(--text-muted); }
 
 .messages-container {
+  position: relative;
+  z-index: 2;
   flex: 1;
   overflow-y: auto;
   padding: 12px 16px;
   scroll-behavior: smooth;
+  background: transparent;
 }
 
 .messages-loading {
@@ -430,11 +477,14 @@ input, textarea, select {
 
 /* ── Message Input ────────────────────────────────────────────────────── */
 .message-input {
+  position: relative;
+  z-index: 2;
   display: flex;
   gap: 8px;
   padding: 10px 16px;
   border-top: 1px solid var(--border);
-  background: var(--bg-secondary);
+  background: rgba(17, 24, 39, 0.78);
+  backdrop-filter: blur(14px);
 }
 
 .message-input textarea {
@@ -1169,7 +1219,8 @@ body {
 
 .status-bar { padding: 10px 18px; gap: 18px; }
 .status-brand { display: flex; align-items: center; min-width: 142px; }
-.status-brand img { max-width: 132px; max-height: 34px; object-fit: contain; display: block; }
+.topbar-logo { max-height: 40px; max-width: 180px; object-fit: contain; display: block; }
+.status-brand img { max-width: 180px; max-height: 40px; object-fit: contain; display: block; }
 .status-brand-mark { font-weight: 800; letter-spacing: -0.03em; color: var(--text); }
 .status-item { color: var(--text-muted); }
 .status-version { margin-left: auto; }
@@ -1199,32 +1250,11 @@ body {
 .conversation-item { padding: 14px 16px; border-bottom-color: rgba(148, 163, 184, 0.1); }
 .conversation-item.selected { background: rgba(110, 231, 249, 0.10); border-left-color: var(--primary); }
 
-.chat-main { background: rgba(8, 11, 20, 0.38); }
 .conversation-header { padding: 18px 24px; }
 .conversation-header h3 { font-size: 17px; letter-spacing: -0.02em; }
 
 .messages-container {
-  position: relative;
   padding: 24px clamp(16px, 4vw, 48px);
-  isolation: isolate;
-}
-.has-chat-background .messages-container::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: var(--chat-bg-image);
-  background-position: center;
-  background-size: cover;
-  filter: blur(1.5px) saturate(0.9);
-  transform: scale(1.01);
-  z-index: -2;
-}
-.has-chat-background .messages-container::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--chat-overlay);
-  z-index: -1;
 }
 
 .message-bubble {
@@ -1313,6 +1343,19 @@ body {
 .gs-section h4 { color: var(--primary); letter-spacing: 0.08em; }
 .gs-section table td { border-bottom-color: rgba(148, 163, 184, 0.1); }
 .save-btn { grid-column: 1 / -1; justify-self: end; padding: 11px 18px; }
+.branding-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.branding-upload-card { display: grid; gap: 12px; padding: 14px; border: 1px solid rgba(148, 163, 184, 0.16); border-radius: 18px; background: rgba(7, 10, 18, 0.32); }
+.branding-upload-header strong, .branding-upload-header span { display: block; }
+.branding-upload-header span, .branding-filename { color: var(--text-muted); font-size: 12px; }
+.branding-upload-preview { min-height: 118px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(148, 163, 184, 0.16); border-radius: 16px; overflow: hidden; background: rgba(7, 10, 18, 0.62); color: var(--text-muted); }
+.branding-upload-preview.is-logo img { max-width: 220px; max-height: 70px; object-fit: contain; }
+.branding-upload-preview.is-background { position: relative; background-image: var(--branding-preview-image); background-size: cover; background-position: center; }
+.branding-upload-preview.is-background::after { content: ''; position: absolute; inset: 0; background: rgba(5, 10, 20, 0.52); }
+.branding-upload-preview.is-background span { position: relative; z-index: 1; }
+.branding-file-row, .branding-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.branding-file-input { display: none; }
+.branding-file-button { cursor: pointer; }
+.branding-error { margin: 0; }
 .branding-controls { display: grid; gap: 12px; }
 .branding-preview { display: grid; gap: 12px; margin-top: 14px; }
 .branding-preview-topbar,
@@ -1339,8 +1382,9 @@ body {
   .conversation-list { width: 100%; max-height: 34vh; }
   .message-bubble { max-width: 92%; }
   .settings-card-grid,
-  .gs-form { grid-template-columns: 1fr; }
-  .settings-panel { position: absolute; right: 8px; top: 8px; bottom: 8px; z-index: 40; }
+  .gs-form,
+  .branding-card-grid { grid-template-columns: 1fr; }
+  .settings-panel { position: absolute; right: 8px; top: 8px; bottom: 8px; z-index: 50; }
 }
 
 .mcp-status {

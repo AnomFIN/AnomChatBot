@@ -34,7 +34,7 @@ function Dot({ color }) {
   );
 }
 
-export default function StatusBar({ status, botActivities, logoSrc }) {
+export default function StatusBar({ status, botActivities, branding }) {
   const { connected: socketConnected } = useSocketContext();
 
   if (!status) {
@@ -46,6 +46,7 @@ export default function StatusBar({ status, botActivities, logoSrc }) {
   const aiConnected = status.ai?.connected;
   const aiModel = status.ai?.model || '?';
   const pendingReplies = status.orchestrator?.pendingReplies ?? 0;
+  const topBarLogoDataUrl = branding?.topBarLogoDataUrl || null;
 
   // Count active bot activities
   const activeActivities = botActivities
@@ -55,7 +56,11 @@ export default function StatusBar({ status, botActivities, logoSrc }) {
   return (
     <div className="status-bar">
       <div className="status-brand">
-        {logoSrc ? <img src={logoSrc} alt="Logo" /> : <span className="status-brand-mark">AnomChatBot</span>}
+        {topBarLogoDataUrl ? (
+          <img src={topBarLogoDataUrl} alt="Logo" className="topbar-logo" />
+        ) : (
+          <span className="status-brand-mark">AnomChatBot</span>
+        )}
       </div>
       <div className="status-item">
         <Dot color={socketConnected ? '#22c55e' : '#ef4444'} />

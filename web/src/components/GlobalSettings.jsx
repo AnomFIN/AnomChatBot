@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { getGlobalSettings, updateGlobalSettings } from '../api/client.js';
 
-const MAX_BRANDING_FILE_BYTES = 3 * 1024 * 1024;
+const MAX_LOGO_FILE_BYTES = 3 * 1024 * 1024;
+const MAX_BACKGROUND_FILE_BYTES = 5 * 1024 * 1024;
 const LOGO_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
 const BACKGROUND_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const MCP_MODES = [
@@ -93,7 +94,40 @@ export default function GlobalSettings({ status, onBrandingChange }) {
     setSaved(false);
   };
 
-  const handleBrandingUpload = async (event, key, allowedTypes) => {
+  const handleIntegrationFormChange = (key, value) => {
+    setIntegrationForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleAddIntegration = () => {
+    setError(null);
+    const nextIntegration = normalizeIntegrationForm(integrationForm);
+    const validationError = validateIntegration(nextIntegration);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const current = parseIntegrations(settings.local_ai_mcp_integrations);
+    const duplicate = current.some(item =>
+      item.server_label.toLowerCase() === nextIntegration.server_label.toLowerCase()
+      && item.server_url.toLowerCase() === nextIntegration.server_url.toLowerCase(),
+    );
+    if (duplicate) {
+      setError('Duplicate MCP integration: same server label and URL already exists.');
+      return;
+    }
+
+    handleChange('local_ai_mcp_integrations', JSON.stringify([...current, nextIntegration]));
+    setIntegrationForm(EMPTY_INTEGRATION_FORM);
+  };
+
+  const handleRemoveIntegration = (index) => {
+    const current = parseIntegrations(settings.local_ai_mcp_integrations);
+    const next = current.filter((_, itemIndex) => itemIndex !== index);
+    handleChange('local_ai_mcp_integrations', JSON.stringify(next));
+  };
+
+  const handleBrandingFileSelect = async (event, key, allowedTypes, maxBytes) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
@@ -114,6 +148,50 @@ export default function GlobalSettings({ status, onBrandingChange }) {
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const handleApplyBranding = async (key) => {
+    const draft = brandingDrafts[key];
+    if (!draft?.previewDataUrl || draft.error) return;
+    await saveBrandingValue(key, draft.previewDataUrl, draft.filename);
+  };
+
+  const handleResetBranding = async (key) => {
+    await saveBrandingValue(key, '', '');
+  };
+
+  const saveBrandingValue = async (key, value, filename) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = serializeSettings({ ...settings, [key]: value });
+      const data = await updateGlobalSettings(payload);
+      const hydrated = hydrateSettings(data);
+      setSettings(hydrated);
+      setBrandingDrafts(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          filename,
+          previewDataUrl: hydrated[key] || null,
+          error: null,
+        },
+      }));
+      onBrandingChange?.(hydrated);
+      setSaved(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setBrandingDraft = (key, patch) => {
+    setBrandingDrafts(prev => ({
+      ...prev,
+      [key]: { ...prev[key], ...patch },
+    }));
+    setSaved(false);
   };
 
   const handleSave = async () => {
@@ -204,10 +282,10 @@ export default function GlobalSettings({ status, onBrandingChange }) {
               </select>
             </label>
             <label>Local AI Base URL
-              <input type="text" value={settings.local_ai_base_url || 'http://127.0.0.1:1234/v1'} onChange={e => handleChange('local_ai_base_url', e.target.value)} />
+              <input type="text" value={settings.local_ai_base_url || DEFAULT_LOCAL_AI_BASE_URL} onChange={e => handleChange('local_ai_base_url', e.target.value)} />
             </label>
             <label>Local AI Model
-              <input type="text" value={settings.local_ai_model || ''} placeholder="Loaded LM Studio model id" onChange={e => handleChange('local_ai_model', e.target.value)} />
+              <input type="text" value={settings.local_ai_model || DEFAULT_LOCAL_AI_MODEL} placeholder="Loaded LM Studio model id" onChange={e => handleChange('local_ai_model', e.target.value)} />
             </label>
             <label className="toggle-label"><input type="checkbox" checked={isTrue(settings.local_ai_use_permission_token)} onChange={e => handleChange('local_ai_use_permission_token', e.target.checked ? 'true' : 'false')} /> Use LM Studio Permission Token</label>
             <label>LM Studio Permission Token
@@ -275,19 +353,90 @@ export default function GlobalSettings({ status, onBrandingChange }) {
               <label>Top bar logo
                 <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={e => handleBrandingUpload(e, 'branding_top_bar_logo', LOGO_TYPES)} />
               </label>
-              <button type="button" className="secondary-btn" onClick={() => handleBrandingChange('branding_top_bar_logo', '')}>Reset top bar logo</button>
-              <label>Chat background image
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={e => handleBrandingUpload(e, 'branding_chat_background', BACKGROUND_TYPES)} />
+              <span className="field-hint">General web search handles news, companies, sports, current events and websites.</span>
+              <span className="field-hint">HuggingFace integration is only for AI-related resources.</span>
+              <label>MCP Mode
+                <select value={mcpMode} onChange={e => handleMcpModeChange(e.target.value)}>
+                  {MCP_MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
               </label>
-              <button type="button" className="secondary-btn" onClick={() => handleBrandingChange('branding_chat_background', '')}>Reset background image</button>
+
+              {mcpMode === 'local_config' && (
+                <>
+                  <div className="mcp-status">Local config · existing .mcp.json flow</div>
+                  <label>MCP config path
+                    <input type="text" value={settings.local_ai_mcp_config_path || '.mcp.json'} onChange={e => handleChange('local_ai_mcp_config_path', e.target.value)} />
+                  </label>
+                </>
+              )}
+
+              {mcpMode === 'ephemeral' && (
+                <div className="mcp-integrations-ui">
+                  <div className="mcp-status mcp-status-live">Uses LM Studio API endpoint /api/v1/chat with input + routed integrations.</div>
+                  <div className="field-hint">HuggingFace MCP is for AI models, datasets, Spaces, papers and HF docs only. It is not a general web search.</div>
+                  <div className="mcp-integration-form">
+                    <label>MCP Server Label
+                      <input type="text" value={integrationForm.server_label} placeholder="huggingface" onChange={e => handleIntegrationFormChange('server_label', e.target.value)} />
+                    </label>
+                    <label>MCP Server URL
+                      <input type="url" value={integrationForm.server_url} placeholder="https://huggingface.co/mcp" onChange={e => handleIntegrationFormChange('server_url', e.target.value)} />
+                    </label>
+                    <label>Allowed Tools
+                      <input type="text" value={integrationForm.allowed_tools} placeholder="brave_web_search, brave_news_search" onChange={e => handleIntegrationFormChange('allowed_tools', e.target.value)} />
+                    </label>
+                    <button type="button" className="secondary-btn" onClick={handleAddIntegration}>Add Integration</button>
+                  </div>
+
+                  <div className="mcp-integration-list">
+                    {integrations.length === 0 ? (
+                      <div className="field-hint">No integrations yet. Add at least one server before saving Ephemeral MCP mode.</div>
+                    ) : integrations.map((integration, index) => (
+                      <div className="mcp-integration-card" key={`${integration.server_label}-${integration.server_url}`}>
+                        <div>
+                          <strong>{integration.server_label}</strong>
+                          <span>{integration.server_url}</span>
+                          <small>{integration.allowed_tools.join(', ')}</small>
+                        </div>
+                        <button type="button" className="secondary-btn danger-lite" onClick={() => handleRemoveIntegration(index)}>Remove Integration</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="branding-preview">
-              <div className="branding-preview-topbar">
-                {settings.branding_top_bar_logo ? <img src={settings.branding_top_bar_logo} alt="Current top bar logo preview" /> : <span>AnomChatBot</span>}
-              </div>
-              <div className="branding-preview-chat" style={settings.branding_chat_background ? { '--preview-bg': `url(${settings.branding_chat_background})` } : undefined}>
-                <span>Preview current branding</span>
-              </div>
+          )}
+
+          <div className="gs-section settings-card branding-settings-card">
+            <h4>Branding / Visual Settings</h4>
+            <span className="field-hint">Branding is stored in server settings and applied only after a successful Apply.</span>
+            <div className="branding-card-grid">
+              <BrandingUploadCard
+                title="Top bar logo"
+                hint="PNG, JPG, WEBP, or SVG · max 3MB"
+                inputId="branding-logo-upload"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                currentDataUrl={settings.branding_top_bar_logo || ''}
+                draft={brandingDrafts.branding_top_bar_logo}
+                fallback={<span>AnomChatBot</span>}
+                onSelect={e => handleBrandingFileSelect(e, 'branding_top_bar_logo', LOGO_TYPES, MAX_LOGO_FILE_BYTES)}
+                onApply={() => handleApplyBranding('branding_top_bar_logo')}
+                onReset={() => handleResetBranding('branding_top_bar_logo')}
+                saving={saving}
+              />
+              <BrandingUploadCard
+                title="Chat background image"
+                hint="PNG, JPG, or WEBP · max 5MB"
+                inputId="branding-background-upload"
+                accept="image/png,image/jpeg,image/webp"
+                currentDataUrl={settings.branding_chat_background || ''}
+                draft={brandingDrafts.branding_chat_background}
+                backgroundPreview
+                fallback={<span>No background set</span>}
+                onSelect={e => handleBrandingFileSelect(e, 'branding_chat_background', BACKGROUND_TYPES, MAX_BACKGROUND_FILE_BYTES)}
+                onApply={() => handleApplyBranding('branding_chat_background')}
+                onReset={() => handleResetBranding('branding_chat_background')}
+                saving={saving}
+              />
             </div>
           </div>
 

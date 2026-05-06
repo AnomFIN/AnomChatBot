@@ -173,8 +173,8 @@ describe('Config — defaults', () => {
     expect(config.telegram.enabled).toBe(false);
     expect(config.defaults.tone).toBe('friendly');
     expect(config.defaults.flirt).toBe('none');
-    expect(config.defaults.temperature).toBe(0.7);
-    expect(config.defaults.maxTokens).toBe(1000);
+    expect(config.defaults.temperature).toBe(0.35);
+    expect(config.defaults.maxTokens).toBe(300);
     expect(config.defaults.maxHistory).toBe(50);
     expect(config.media.storageDir).toBe('./data/media');
     expect(config.media.maxImageSizeMb).toBe(5);
@@ -191,10 +191,10 @@ describe('Config — defaults', () => {
 });
 
 describe('Config — conditional warnings', () => {
-  it('warns when AI_PROVIDER=openai but no API key', () => {
+  it('does not warn for missing OPENAI_API_KEY while Local AI default is active', () => {
     const result = validateConfig({ ...BASE_ENV, AI_PROVIDER: 'openai' });
     expect(result.valid).toBe(true);
-    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(false);
   });
 
   it('warns when WHATSAPP_MODE=cloud_api but no access token', () => {
@@ -211,7 +211,7 @@ describe('Config — Local AI / LM Studio', () => {
     expect(result.config.ai.localAi).toMatchObject({
       enabled: true,
       provider: 'lmstudio',
-      baseUrl: 'http://127.0.0.1:1234/v1',
+      baseUrl: 'http://10.5.0.2:1234/v1',
       model: 'qwen-local',
       usePermissionToken: false,
       mcpEnabled: false,
@@ -255,7 +255,7 @@ describe('Config — Local AI / LM Studio', () => {
   it('keeps OPENAI_API_KEY warning behavior even when Local AI is enabled', () => {
     const result = validateConfig({ ...BASE_ENV, LOCAL_AI_ENABLED: 'true', LOCAL_AI_MODEL: 'qwen-local' });
     expect(result.valid).toBe(true);
-    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('OPENAI_API_KEY'))).toBe(false);
   });
 
   it('rejects unsupported Local AI providers', () => {

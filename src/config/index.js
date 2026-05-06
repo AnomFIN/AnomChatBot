@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_LOCAL_AI_BASE_URL, DEFAULT_LOCAL_AI_MODEL, DEFAULT_WEB_SEARCH_PROVIDER, getDefaultEphemeralMcpIntegrations } from '../core/mcpIntegrations.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -101,10 +102,10 @@ export function validateConfig(env) {
   const openaiModel = env.OPENAI_MODEL || 'gpt-4o-mini';
 
   // ── Local AI / LM Studio (strictly separate from OpenAI cloud) ─────────────
-  const localAiEnabled = parseBoolean(env.LOCAL_AI_ENABLED, false);
+  const localAiEnabled = parseBoolean(env.LOCAL_AI_ENABLED, true);
   const localAiProvider = (env.LOCAL_AI_PROVIDER || 'lmstudio').toLowerCase();
-  const localAiBaseUrl = env.LOCAL_AI_BASE_URL || 'http://127.0.0.1:1234/v1';
-  const localAiModel = env.LOCAL_AI_MODEL || '';
+  const localAiBaseUrl = env.LOCAL_AI_BASE_URL || DEFAULT_LOCAL_AI_BASE_URL;
+  const localAiModel = env.LOCAL_AI_MODEL || DEFAULT_LOCAL_AI_MODEL;
   const localAiUsePermissionToken = parseBoolean(env.LOCAL_AI_USE_PERMISSION_TOKEN, false);
   const localAiPermissionToken = env.LOCAL_AI_PERMISSION_TOKEN || '';
   const localAiMcpEnabled = parseBoolean(env.LOCAL_AI_MCP_ENABLED, false);
@@ -131,7 +132,7 @@ export function validateConfig(env) {
     errors.push('LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral');
   }
 
-  if (VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
+  if (!localAiEnabled && VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
     warnings.push('OPENAI_API_KEY not set — AI features will not work until configured');
   }
 
@@ -174,12 +175,12 @@ export function validateConfig(env) {
     errors.push(`DEFAULT_FLIRT must be one of: ${VALID_FLIRTS.join(', ')}`);
   }
 
-  const defaultTemperature = parseNumeric(env.DEFAULT_TEMPERATURE, 0.7);
+  const defaultTemperature = parseNumeric(env.DEFAULT_TEMPERATURE, 0.35);
   if (defaultTemperature === null) {
     errors.push('DEFAULT_TEMPERATURE must be a valid number');
   }
 
-  const defaultMaxTokens = parseInteger(env.DEFAULT_MAX_TOKENS, 1000);
+  const defaultMaxTokens = parseInteger(env.DEFAULT_MAX_TOKENS, 300);
   if (defaultMaxTokens === null) {
     errors.push('DEFAULT_MAX_TOKENS must be a valid integer');
   }

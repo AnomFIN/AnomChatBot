@@ -1,3 +1,4 @@
+import { DEFAULT_LOCAL_AI_BASE_URL, DEFAULT_LOCAL_AI_MODEL, getDefaultEphemeralMcpIntegrations } from '../core/mcpIntegrations.js';
 import {
   getOrCreateConversation,
   getConversation,
@@ -136,8 +137,8 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       const localAi = {
         enabled: true,
         provider: settings.local_ai_provider || 'lmstudio',
-        baseUrl: settings.local_ai_base_url || config.ai.localAi?.baseUrl || 'http://127.0.0.1:1234/v1',
-        model: settings.local_ai_model || config.ai.localAi?.model || '',
+        baseUrl: settings.local_ai_base_url || config.ai.localAi?.baseUrl || DEFAULT_LOCAL_AI_BASE_URL,
+        model: settings.local_ai_model || config.ai.localAi?.model || DEFAULT_LOCAL_AI_MODEL,
         usePermissionToken: isTruthy(settings.local_ai_use_permission_token),
         permissionToken: settings.local_ai_permission_token || config.ai.localAi?.permissionToken || '',
         mcpEnabled: isTruthy(settings.local_ai_mcp_enabled),

@@ -3,7 +3,8 @@ import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
 import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, VALID_LOCAL_AI_MCP_MODES, redactSecret } from '../config/index.js';
 import { normalizeEphemeralMcpIntegrations } from '../ai/provider.js';
 
-const MAX_BRANDING_DATA_BYTES = 3 * 1024 * 1024;
+const MAX_LOGO_DATA_BYTES = 3 * 1024 * 1024;
+const MAX_BACKGROUND_DATA_BYTES = 5 * 1024 * 1024;
 const LOGO_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
 const BACKGROUND_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
@@ -79,8 +80,8 @@ export default async function settingsRoutes(fastify, opts) {
       errors.push(...integrationErrors);
     }
 
-    validateBrandingDataUrl(body.branding_top_bar_logo, 'branding_top_bar_logo', LOGO_MIME_TYPES, errors);
-    validateBrandingDataUrl(body.branding_chat_background, 'branding_chat_background', BACKGROUND_MIME_TYPES, errors);
+    validateBrandingDataUrl(body.branding_top_bar_logo, 'branding_top_bar_logo', LOGO_MIME_TYPES, MAX_LOGO_DATA_BYTES, errors);
+    validateBrandingDataUrl(body.branding_chat_background, 'branding_chat_background', BACKGROUND_MIME_TYPES, MAX_BACKGROUND_DATA_BYTES, errors);
 
     // Validate presence settings
     if (body.presence_typing_speed !== undefined) {
@@ -323,7 +324,7 @@ export default async function settingsRoutes(fastify, opts) {
 }
 
 
-function validateBrandingDataUrl(value, key, allowedMimeTypes, errors) {
+function validateBrandingDataUrl(value, key, allowedMimeTypes, maxBytes, errors) {
   if (value === undefined || value === '') return;
   if (typeof value !== 'string') {
     errors.push(`${key} must be a string data URL`);
@@ -344,8 +345,77 @@ function validateBrandingDataUrl(value, key, allowedMimeTypes, errors) {
 
   const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0;
   const byteLength = Math.floor((payload.length * 3) / 4) - padding;
-  if (byteLength > MAX_BRANDING_DATA_BYTES) {
-    errors.push(`${key} must be 3MB or smaller`);
+  if (byteLength > maxBytes) {
+    errors.push(`${key} must be ${Math.round(maxBytes / 1024 / 1024)}MB or smaller`);
+  }
+}
+
+
+function normalizeMcpMode(mode, legacyEnabled) {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (normalized) return normalized;
+  return legacyEnabled === true || legacyEnabled === 'true' || legacyEnabled === '1' ? 'local_config' : 'disabled';
+}
+
+function validateEphemeralMcpIntegrations(value) {
+  const errors = [];
+  const integrations = parseIntegrationArray(value, errors);
+  if (errors.length > 0) return errors;
+  if (integrations.length === 0) return ['At least one Ephemeral MCP integration is required'];
+
+  const seen = new Set();
+  integrations.forEach((integration, index) => {
+    const prefix = `Integration ${index + 1}`;
+    const serverLabel = String(integration?.server_label ?? integration?.serverLabel ?? '').trim();
+    const serverUrl = String(integration?.server_url ?? integration?.serverUrl ?? '').trim();
+    const allowedTools = Array.isArray(integration?.allowed_tools ?? integration?.allowedTools)
+      ? (integration.allowed_tools ?? integration.allowedTools).map(tool => String(tool).trim()).filter(Boolean)
+      : String(integration?.allowed_tools ?? integration?.allowedTools ?? '').split(',').map(tool => tool.trim()).filter(Boolean);
+    const hasServerLabel = Boolean(serverLabel);
+    const hasServerUrl = Boolean(serverUrl);
+    const hasValidServerUrl = hasServerUrl && isValidHttpUrl(serverUrl);
+
+    if (!hasServerLabel) errors.push(`${prefix}: server label is required`);
+    if (!hasServerUrl) errors.push(`${prefix}: server URL is required`);
+    else if (!hasValidServerUrl) errors.push(`${prefix}: server_url must be a valid http(s) URL`);
+    if (allowedTools.length === 0) errors.push(`${prefix}: allowed_tools must not be empty`);
+
+    if (hasServerLabel && hasValidServerUrl) {
+      const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}`;
+      if (seen.has(key)) errors.push(`${prefix}: duplicate integration for this server label and URL`);
+      seen.add(key);
+    }
+  });
+
+  return errors;
+}
+
+function parseIntegrationArray(value, errors) {
+  if (Array.isArray(value)) return value;
+  if (value === undefined || value === null || value === '') return [];
+  if (typeof value !== 'string') {
+    errors.push('local_ai_mcp_integrations must be a JSON array');
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      errors.push('local_ai_mcp_integrations must be a JSON array');
+      return [];
+    }
+    return parsed;
+  } catch {
+    errors.push('local_ai_mcp_integrations must be valid JSON');
+    return [];
+  }
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
   }
 }
 

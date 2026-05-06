@@ -1,5 +1,6 @@
 // Security-first. Creator-ready. Future-proof.
 import OpenAI from 'openai';
+import { buildMcpRoutingInstruction, selectEphemeralMcpIntegrations } from '../core/mcpIntegrations.js';
 
 const LOCAL_PROVIDER = 'lmstudio';
 const MCP_MODE_DISABLED = 'disabled';
@@ -184,7 +185,7 @@ function createLocalAIProvider(localAi, logger = null) {
       const payload = await response.json();
       connected = true;
       lastError = null;
-      return normalizeCompletion(payload);
+      return usesLmStudioApi ? normalizeLmStudioApiChatResponse(payload) : normalizeCompletion(payload);
     } catch (err) {
       if (isAbortError(err)) throw err;
       connected = false;

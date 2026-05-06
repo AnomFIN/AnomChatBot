@@ -61,7 +61,7 @@ async function buildApp() {
   cleanupTestDb();
   initDatabase(TEST_CONFIG);
 
-  fastify = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
+  fastify = Fastify({ logger: false, bodyLimit: 8 * 1024 * 1024 });
   await fastify.register(formbody);
 
   mockAI = createMockAIProvider();
@@ -538,6 +538,15 @@ describe('PUT /api/settings — Local AI, MCP, and branding validation', () => {
     });
     expect(sizeRes.statusCode).toBe(400);
     expect(JSON.parse(sizeRes.body).error).toContain('3MB');
+
+    const tooLargeBackground = `data:image/png;base64,${Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64')}`;
+    const bgSizeRes = await fastify.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: { branding_chat_background: tooLargeBackground },
+    });
+    expect(bgSizeRes.statusCode).toBe(400);
+    expect(JSON.parse(bgSizeRes.body).error).toContain('5MB');
   });
 });
 

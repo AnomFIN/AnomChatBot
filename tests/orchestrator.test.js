@@ -50,6 +50,7 @@ describe('Orchestrator — handleIncomingMessage', () => {
   beforeEach(() => {
     cleanupTestDb();
     initDatabase(TEST_CONFIG);
+    setSettingsBulk({ local_ai_enabled: 'false', local_ai_mcp_mode: 'disabled' });
     mockAI = createMockAIProvider();
     mockIO = createMockIO();
     orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
@@ -185,6 +186,7 @@ describe('Orchestrator — first-message rule', () => {
   beforeEach(() => {
     cleanupTestDb();
     initDatabase(TEST_CONFIG);
+    setSettingsBulk({ local_ai_enabled: 'false', local_ai_mcp_mode: 'disabled' });
     mockAI = createMockAIProvider();
     mockIO = createMockIO();
     orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
@@ -245,6 +247,7 @@ describe('Orchestrator — handleOperatorMessage', () => {
   beforeEach(() => {
     cleanupTestDb();
     initDatabase(TEST_CONFIG);
+    setSettingsBulk({ local_ai_enabled: 'false', local_ai_mcp_mode: 'disabled' });
     mockAI = createMockAIProvider();
     mockIO = createMockIO();
     orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);

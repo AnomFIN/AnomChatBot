@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_LOCAL_AI_BASE_URL, DEFAULT_LOCAL_AI_MODEL, DEFAULT_WEB_SEARCH_PROVIDER, getDefaultEphemeralMcpIntegrations } from '../core/mcpIntegrations.js';
 
 /**
  * Database schema and migrations.
@@ -342,10 +343,10 @@ function seedSettings(db) {
     ['ai_base_url', ''],
     ['ai_model', ''],
     ['ai_api_key', ''],
-    ['local_ai_enabled', 'false'],
+    ['local_ai_enabled', 'true'],
     ['local_ai_provider', 'lmstudio'],
-    ['local_ai_base_url', 'http://127.0.0.1:1234/v1'],
-    ['local_ai_model', ''],
+    ['local_ai_base_url', DEFAULT_LOCAL_AI_BASE_URL],
+    ['local_ai_model', DEFAULT_LOCAL_AI_MODEL],
     ['local_ai_use_permission_token', 'false'],
     ['local_ai_permission_token', ''],
     ['local_ai_mcp_enabled', 'false'],

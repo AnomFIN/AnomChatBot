@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createAIProvider } from '../src/ai/provider.js';
+import { createAIProvider, normalizeLmStudioMessageContent, normalizeLmStudioApiChatResponse, normalizeEphemeralMcpIntegrations, serializeMessagesForLmStudioInput } from '../src/ai/provider.js';
 
 // Mock the OpenAI module
 vi.mock('openai', () => {
