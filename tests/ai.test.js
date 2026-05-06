@@ -219,3 +219,85 @@ describe('AI Provider — baseURL override', () => {
     expect(provider.getStatus().provider).toBe('openai_compatible');
   });
 });
+
+describe('AI Provider — Local AI / LM Studio', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    global.fetch = vi.fn();
+  });
+
+  it('does not send Authorization when permission token is disabled', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'local ok' } }] }),
+    });
+
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        usePermissionToken: false,
+        permissionToken: 'secret-token',
+      },
+    }));
+
+    const result = await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+
+    expect(result.content).toBe('local ok');
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:1234/v1/chat/completions',
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+  });
+
+  it('adds Authorization only for Local AI when permission token is enabled', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'token ok' } }] }),
+    });
+
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1/',
+        model: 'local-model',
+        usePermissionToken: true,
+        permissionToken: 'lmstudio-token',
+      },
+    }));
+
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:1234/v1/chat/completions',
+      expect.objectContaining({
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer lmstudio-token',
+        },
+      }),
+    );
+  });
+
+  it('fails clearly when token toggle is enabled but token is missing', async () => {
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        usePermissionToken: true,
+        permissionToken: '',
+      },
+    }));
+
+    await expect(provider.generateReply([{ role: 'user', content: 'Hi' }]))
+      .rejects.toMatchObject({ type: 'auth_error' });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});

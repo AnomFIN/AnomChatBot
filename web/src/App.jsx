@@ -1,3 +1,4 @@
+// Less noise. More signal. AnomFIN.
 import { useState, useEffect } from 'react';
 import { SocketProvider } from './context/SocketContext.jsx';
 import { useConversations, useBotActivity } from './hooks/useConversations.js';
@@ -11,6 +12,7 @@ import QRCodeDisplay from './components/QRCodeDisplay.jsx';
 import LogsView from './components/LogsView.jsx';
 import PresetsManager from './components/PresetsManager.jsx';
 import NewConversation from './components/NewConversation.jsx';
+import { getGlobalSettings } from './api/client.js';
 
 function Dashboard() {
   const { conversations, loading, refresh } = useConversations();
@@ -20,6 +22,7 @@ function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'presets' | 'global' | 'qr' | 'logs'
+  const [branding, setBranding] = useState({});
   const [showSidebar, setShowSidebar] = useState(() => {
     const saved = localStorage.getItem('anomchatbot-sidebar-visible');
     return saved !== null ? JSON.parse(saved) : true;
@@ -30,6 +33,12 @@ function Dashboard() {
   useEffect(() => {
     localStorage.setItem('anomchatbot-sidebar-visible', JSON.stringify(showSidebar));
   }, [showSidebar]);
+
+  useEffect(() => {
+    getGlobalSettings()
+      .then(setBranding)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handleKeyboard = (event) => {
@@ -55,8 +64,11 @@ function Dashboard() {
   };
 
   return (
-    <div className="app-container">
-      <StatusBar status={status} botActivities={botActivities} />
+    <div
+      className={`app-container ${branding.branding_chat_background ? 'has-chat-background' : ''}`}
+      style={branding.branding_chat_background ? { '--chat-bg-image': `url(${branding.branding_chat_background})` } : undefined}
+    >
+      <StatusBar status={status} botActivities={botActivities} logoSrc={branding.branding_top_bar_logo} />
 
       <div className="app-nav">
         <button className={activeTab === 'chat' ? 'active' : ''} onClick={() => setActiveTab('chat')}>
@@ -121,7 +133,7 @@ function Dashboard() {
 
         {activeTab === 'presets' && <PresetsManager />}
 
-        {activeTab === 'global' && <GlobalSettings status={status} />}
+        {activeTab === 'global' && <GlobalSettings status={status} onBrandingChange={setBranding} />}
 
         {activeTab === 'qr' && (
           <QRCodeDisplay whatsappStatus={status?.whatsapp || { mode: status?.modes?.whatsappMode }} />

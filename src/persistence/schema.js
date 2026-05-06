@@ -32,10 +32,15 @@ export function runMigrations(db) {
     runV5(db);
   }
 
+  // ── v6: Local AI / MCP / Branding global settings ────────────────
+  if (schemaVersion < 6) {
+    runV6(db);
+  }
+
   // ── update schema version ──────────────────────────────────────────────
   db.prepare(`
     INSERT OR REPLACE INTO _meta (key, value, updated_at)
-    VALUES ('schema_version', '5', datetime('now'))
+    VALUES ('schema_version', '6', datetime('now'))
   `).run();
 }
 
@@ -246,6 +251,21 @@ function runV5(db) {
   addColumn('conversations', 'ai_approach_delay_minutes', 'INTEGER NOT NULL DEFAULT 10');
 }
 
+function runV6(db) {
+  ensureSettings(db);
+  seedSettings(db);
+}
+
+function ensureSettings(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+}
+
 function seedPresets(db) {
   const insert = db.prepare(`
     INSERT INTO presets (id, name, system_prompt, tone, flirt, temperature, max_tokens, reply_delay_min, reply_delay_max, is_default)
@@ -308,6 +328,20 @@ function seedSettings(db) {
     ['presence_min_typing', '2000'],
     ['presence_max_typing', '10000'],
     ['presence_idle_after_send', '3000'],
+    ['ai_provider', ''],
+    ['ai_base_url', ''],
+    ['ai_model', ''],
+    ['ai_api_key', ''],
+    ['local_ai_enabled', 'false'],
+    ['local_ai_provider', 'lmstudio'],
+    ['local_ai_base_url', 'http://127.0.0.1:1234/v1'],
+    ['local_ai_model', ''],
+    ['local_ai_use_permission_token', 'false'],
+    ['local_ai_permission_token', ''],
+    ['local_ai_mcp_enabled', 'false'],
+    ['local_ai_mcp_config_path', '.mcp.json'],
+    ['branding_top_bar_logo', ''],
+    ['branding_chat_background', ''],
   ];
 
   const insertMany = db.transaction(() => {

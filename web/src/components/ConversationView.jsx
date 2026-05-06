@@ -91,10 +91,9 @@ export default function ConversationView({ conversationId, conversation, botActi
           onKeyDown={handleKeyDown}
           placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
           rows={2}
-          disabled={sending}
         />
         <button onClick={handleSend} disabled={sending || !input.trim()}>
-          {sending ? '…' : 'Send'}
+          {sending ? 'Sending…' : 'Send'}
         </button>
       </div>
     </div>
