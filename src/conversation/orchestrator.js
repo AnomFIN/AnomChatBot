@@ -125,17 +125,23 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
   function _getGlobalAIProvider() {
     const settings = getSettingsBulk([
       'ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key',
-      'local_ai_enabled', 'local_ai_base_url', 'local_ai_model',
+      'local_ai_enabled', 'local_ai_provider', 'local_ai_base_url', 'local_ai_model',
       'local_ai_use_permission_token', 'local_ai_permission_token',
     ]);
 
     // ── Local AI / LM Studio override ────────────────────────────────────
     const localAiEnabledSetting = settings.local_ai_enabled;
+    const localAiProvider = settings.local_ai_provider || config.localAi?.provider || 'openai';
     const localAiActive =
       localAiEnabledSetting === 'true' ||
       (localAiEnabledSetting === undefined && config.localAi?.enabled);
 
     if (localAiActive) {
+      if (localAiProvider !== 'openai') {
+        log('warn', `Unsupported local AI provider configured: ${localAiProvider}`);
+        return null;
+      }
+
       const baseUrl = settings.local_ai_base_url || config.localAi?.baseUrl || 'http://127.0.0.1:1234/v1';
       const model = settings.local_ai_model || config.localAi?.model || '';
       if (!model) return null; // Can't create provider without model
