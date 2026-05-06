@@ -21,6 +21,9 @@ import { createApproachManager } from './approachManager.js';
 import { createAIProvider } from '../ai/provider.js';
 import { downloadAndStore } from '../media/storage.js';
 
+// Placeholder API key used when no real credential is needed (local AI without token)
+const LOCAL_AI_DEFAULT_KEY = 'local-ai-key';
+
 /**
  * Create the conversation orchestrator.
  * Central message router: receive → persist → delay → AI → presence → send.
@@ -144,7 +147,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
         settings.local_ai_permission_token || config.localAi?.permissionToken || '';
 
       // Use permission token as apiKey so the SDK sends Authorization: Bearer <token>
-      const apiKey = (useToken && token) ? token : 'local-ai-key';
+      const apiKey = (useToken && token) ? token : LOCAL_AI_DEFAULT_KEY;
 
       const cacheKey = `local_ai|${baseUrl}|${model}|${apiKey}`;
       if (conversationProviders.has(cacheKey)) {

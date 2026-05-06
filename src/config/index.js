@@ -98,6 +98,9 @@ export function validateConfig(env) {
   // ── Local AI / LM Studio ─────────────────────────────────────────────────
   const localAiEnabled = parseBoolean(env.LOCAL_AI_ENABLED, false);
   const localAiProvider = (env.LOCAL_AI_PROVIDER || 'lmstudio').toLowerCase();
+  if (!VALID_LOCAL_AI_PROVIDERS.includes(localAiProvider)) {
+    warnings.push(`LOCAL_AI_PROVIDER must be one of: ${VALID_LOCAL_AI_PROVIDERS.join(', ')} — defaulting to lmstudio`);
+  }
   const localAiBaseUrl = env.LOCAL_AI_BASE_URL || 'http://127.0.0.1:1234/v1';
   const localAiModel = env.LOCAL_AI_MODEL || '';
   const localAiUsePermissionToken = parseBoolean(env.LOCAL_AI_USE_PERMISSION_TOKEN, false);

@@ -188,7 +188,8 @@ export default function GlobalSettings({ status }) {
             <h4>Local AI / LM Studio Settings</h4>
             <span className="field-hint">
               Configure a local AI provider (LM Studio). When enabled, Local AI takes priority over the
-              standard AI Provider settings above. OpenAI cloud usage is not affected.
+              standard AI Provider settings above for all conversations. OpenAI settings remain
+              available and will be used again when Local AI is disabled.
             </span>
 
             <label className="toggle-label">
@@ -249,7 +250,7 @@ export default function GlobalSettings({ status }) {
                 onChange={e => handleChange('local_ai_permission_token', e.target.value)}
               />
               <span className="field-hint">
-                Used when LM Studio server authentication is enabled. Token is stored securely and redacted in UI.
+                Used when LM Studio server authentication is enabled. Token is redacted in UI.
               </span>
             </label>
 
