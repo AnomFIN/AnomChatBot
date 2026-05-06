@@ -328,4 +328,71 @@ describe('AI Provider — Local AI / LM Studio', () => {
       .rejects.toMatchObject({ type: 'auth_error' });
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it('uses LM Studio /api/v1/chat with integrations for Ephemeral MCP mode', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ output_text: 'ephemeral ok', usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 } }),
+    });
+
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'ibm/granite-4-micro',
+        usePermissionToken: true,
+        permissionToken: 'lmstudio-token',
+        mcpMode: 'ephemeral',
+        mcpIntegrations: [{
+          type: 'ephemeral_mcp',
+          server_label: 'huggingface',
+          server_url: 'https://huggingface.co/mcp',
+          allowed_tools: ['model_search'],
+        }],
+        contextLength: 8000,
+      },
+    }));
+
+    const result = await provider.generateReply([{ role: 'user', content: 'Top model?' }]);
+    const [, request] = global.fetch.mock.calls[0];
+    const body = JSON.parse(request.body);
+
+    expect(result.content).toBe('ephemeral ok');
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/api/v1/chat', expect.any(Object));
+    expect(request.headers.Authorization).toBe('Bearer lmstudio-token');
+    expect(body).toMatchObject({
+      model: 'ibm/granite-4-micro',
+      input: 'user: Top model?',
+      context_length: 8000,
+      integrations: [{
+        type: 'ephemeral_mcp',
+        server_label: 'huggingface',
+        server_url: 'https://huggingface.co/mcp',
+        allowed_tools: ['model_search'],
+      }],
+    });
+  });
+
+  it('falls back to existing Local AI path when Ephemeral MCP has no integrations', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'fallback ok' } }] }),
+    });
+
+    const provider = createAIProvider(makeConfig({
+      localAi: {
+        enabled: true,
+        provider: 'lmstudio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        usePermissionToken: false,
+        mcpMode: 'ephemeral',
+      },
+    }));
+
+    await provider.generateReply([{ role: 'user', content: 'Hi' }]);
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/v1/chat/completions', expect.any(Object));
+  });
+
 });

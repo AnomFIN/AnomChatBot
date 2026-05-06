@@ -1,10 +1,17 @@
-// Engineered for autonomy, designed for humans.
+// Less noise. More signal. AnomFIN.
 import { useState, useEffect } from 'react';
 import { getGlobalSettings, updateGlobalSettings } from '../api/client.js';
 
 const MAX_BRANDING_FILE_BYTES = 3 * 1024 * 1024;
 const LOGO_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
 const BACKGROUND_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const MCP_MODES = [
+  ['disabled', 'Disabled'],
+  ['local_config', 'Local MCP Config (.mcp.json)'],
+  ['ephemeral', 'Ephemeral MCP'],
+];
+
+const EMPTY_INTEGRATION_FORM = { server_label: '', server_url: '', allowed_tools: '' };
 
 export default function GlobalSettings({ status, onBrandingChange }) {
   const [settings, setSettings] = useState(null);
@@ -12,6 +19,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [integrationForm, setIntegrationForm] = useState(EMPTY_INTEGRATION_FORM);
 
   useEffect(() => {
     loadSettings();
@@ -20,7 +28,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const loadSettings = async () => {
     try {
       const data = await getGlobalSettings();
-      setSettings(data);
+      setSettings(hydrateSettings(data));
       onBrandingChange?.(data);
     } catch (err) {
       setError(err.message);
@@ -32,6 +40,48 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   const handleChange = (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
     setSaved(false);
+  };
+
+  const handleMcpModeChange = (mode) => {
+    setSettings(prev => ({
+      ...prev,
+      local_ai_mcp_mode: mode,
+      local_ai_mcp_enabled: mode === 'disabled' ? 'false' : 'true',
+    }));
+    setSaved(false);
+  };
+
+  const handleIntegrationFormChange = (key, value) => {
+    setIntegrationForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleAddIntegration = () => {
+    setError(null);
+    const nextIntegration = normalizeIntegrationForm(integrationForm);
+    const validationError = validateIntegration(nextIntegration);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const current = parseIntegrations(settings.local_ai_mcp_integrations);
+    const duplicate = current.some(item =>
+      item.server_label.toLowerCase() === nextIntegration.server_label.toLowerCase()
+      && item.server_url.toLowerCase() === nextIntegration.server_url.toLowerCase(),
+    );
+    if (duplicate) {
+      setError('Duplicate MCP integration: same server label and URL already exists.');
+      return;
+    }
+
+    handleChange('local_ai_mcp_integrations', JSON.stringify([...current, nextIntegration]));
+    setIntegrationForm(EMPTY_INTEGRATION_FORM);
+  };
+
+  const handleRemoveIntegration = (index) => {
+    const current = parseIntegrations(settings.local_ai_mcp_integrations);
+    const next = current.filter((_, itemIndex) => itemIndex !== index);
+    handleChange('local_ai_mcp_integrations', JSON.stringify(next));
   };
 
   const handleBrandingChange = (key, value) => {
@@ -49,14 +99,11 @@ export default function GlobalSettings({ status, onBrandingChange }) {
     if (!file) return;
 
     if (!allowedTypes.has(file.type)) {
-      setError(key === 'branding_top_bar_logo'
-        ? 'Logo must be PNG, JPG, JPEG, WEBP, or SVG.'
-        : 'Background must be PNG, JPG, JPEG, or WEBP.');
+      setError(key === 'branding_chat_background' ? 'Chat background must be PNG, JPEG, or WebP.' : 'Logo must be PNG, JPEG, WebP, or SVG.');
       return;
     }
-
     if (file.size > MAX_BRANDING_FILE_BYTES) {
-      setError('Branding file is too large. Maximum size is 3MB.');
+      setError('Branding images must be 3MB or smaller.');
       return;
     }
 
@@ -64,8 +111,8 @@ export default function GlobalSettings({ status, onBrandingChange }) {
       const dataUrl = await readFileAsDataUrl(file);
       handleBrandingChange(key, dataUrl);
       setError(null);
-    } catch {
-      setError('Unable to read the selected file. Please try again with a different file.');
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -73,9 +120,11 @@ export default function GlobalSettings({ status, onBrandingChange }) {
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateGlobalSettings(settings);
-      setSettings(updated);
-      onBrandingChange?.(updated);
+      const payload = serializeSettings(settings);
+      const data = await updateGlobalSettings(payload);
+      const hydrated = hydrateSettings(data);
+      setSettings(hydrated);
+      onBrandingChange?.(hydrated);
       setSaved(true);
     } catch (err) {
       setError(err.message);
@@ -85,6 +134,10 @@ export default function GlobalSettings({ status, onBrandingChange }) {
   };
 
   if (!status) return <div className="global-settings">Loading…</div>;
+
+  const localAiEnabled = isTrue(settings?.local_ai_enabled);
+  const mcpMode = settings?.local_ai_mcp_mode || (isTrue(settings?.local_ai_mcp_enabled) ? 'local_config' : 'disabled');
+  const integrations = parseIntegrations(settings?.local_ai_mcp_integrations);
 
   return (
     <div className="global-settings">
@@ -144,7 +197,7 @@ export default function GlobalSettings({ status, onBrandingChange }) {
 
           <div className="gs-section settings-card">
             <h4>Local AI / LM Studio</h4>
-            <label className="toggle-label"><input type="checkbox" checked={isTrue(settings.local_ai_enabled)} onChange={e => handleChange('local_ai_enabled', e.target.checked ? 'true' : 'false')} /> Enable Local AI</label>
+            <label className="toggle-label"><input type="checkbox" checked={localAiEnabled} onChange={e => handleChange('local_ai_enabled', e.target.checked ? 'true' : 'false')} /> Enable Local AI</label>
             <label>Local AI Provider
               <select value={settings.local_ai_provider || 'lmstudio'} onChange={e => handleChange('local_ai_provider', e.target.value)}>
                 <option value="lmstudio">LM Studio</option>
@@ -162,15 +215,59 @@ export default function GlobalSettings({ status, onBrandingChange }) {
             </label>
           </div>
 
-          <div className="gs-section settings-card">
-            <h4>MCP</h4>
-            <span className="field-hint">MCP is Local AI only. Current implementation stores config and documents the missing tool-call loop.</span>
-            <div className="mcp-status">Configuration only · tool loop not implemented yet</div>
-            <label className="toggle-label"><input type="checkbox" checked={isTrue(settings.local_ai_mcp_enabled)} onChange={e => handleChange('local_ai_mcp_enabled', e.target.checked ? 'true' : 'false')} /> Enable MCP</label>
-            <label>MCP config path
-              <input type="text" value={settings.local_ai_mcp_config_path || '.mcp.json'} onChange={e => handleChange('local_ai_mcp_config_path', e.target.value)} />
-            </label>
-          </div>
+          {localAiEnabled && (
+            <div className="gs-section settings-card mcp-card">
+              <h4>MCP Mode</h4>
+              <span className="field-hint">MCP is Local AI / LM Studio only. OpenAI cloud never receives integrations.</span>
+              <label>MCP Mode
+                <select value={mcpMode} onChange={e => handleMcpModeChange(e.target.value)}>
+                  {MCP_MODES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+
+              {mcpMode === 'local_config' && (
+                <>
+                  <div className="mcp-status">Local config · existing .mcp.json flow</div>
+                  <label>MCP config path
+                    <input type="text" value={settings.local_ai_mcp_config_path || '.mcp.json'} onChange={e => handleChange('local_ai_mcp_config_path', e.target.value)} />
+                  </label>
+                </>
+              )}
+
+              {mcpMode === 'ephemeral' && (
+                <div className="mcp-integrations-ui">
+                  <div className="mcp-status mcp-status-live">LM Studio /api/v1/chat integrations</div>
+                  <div className="mcp-integration-form">
+                    <label>MCP Server Label
+                      <input type="text" value={integrationForm.server_label} placeholder="huggingface" onChange={e => handleIntegrationFormChange('server_label', e.target.value)} />
+                    </label>
+                    <label>MCP Server URL
+                      <input type="url" value={integrationForm.server_url} placeholder="https://huggingface.co/mcp" onChange={e => handleIntegrationFormChange('server_url', e.target.value)} />
+                    </label>
+                    <label>Allowed Tools
+                      <input type="text" value={integrationForm.allowed_tools} placeholder="model_search, dataset_search" onChange={e => handleIntegrationFormChange('allowed_tools', e.target.value)} />
+                    </label>
+                    <button type="button" className="secondary-btn" onClick={handleAddIntegration}>Add Integration</button>
+                  </div>
+
+                  <div className="mcp-integration-list">
+                    {integrations.length === 0 ? (
+                      <div className="field-hint">No integrations yet. Add at least one server before saving Ephemeral MCP mode.</div>
+                    ) : integrations.map((integration, index) => (
+                      <div className="mcp-integration-card" key={`${integration.server_label}-${integration.server_url}`}>
+                        <div>
+                          <strong>{integration.server_label}</strong>
+                          <span>{integration.server_url}</span>
+                          <small>{integration.allowed_tools.join(', ')}</small>
+                        </div>
+                        <button type="button" className="secondary-btn danger-lite" onClick={() => handleRemoveIntegration(index)}>Remove Integration</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="gs-section settings-card">
             <h4>Branding / Visual Settings</h4>
@@ -216,6 +313,72 @@ function InfoCard({ title, rows }) {
       <table><tbody>{rows.map(([key, value]) => <tr key={key}><td>{key}</td><td>{value}</td></tr>)}</tbody></table>
     </div>
   );
+}
+
+function hydrateSettings(data) {
+  return {
+    ...data,
+    local_ai_mcp_mode: data.local_ai_mcp_mode || (isTrue(data.local_ai_mcp_enabled) ? 'local_config' : 'disabled'),
+    local_ai_mcp_integrations: JSON.stringify(parseIntegrations(data.local_ai_mcp_integrations)),
+  };
+}
+
+function serializeSettings(data) {
+  const mode = data.local_ai_mcp_mode || 'disabled';
+  return {
+    ...data,
+    local_ai_mcp_mode: mode,
+    local_ai_mcp_enabled: mode === 'disabled' ? 'false' : 'true',
+    local_ai_mcp_integrations: JSON.stringify(parseIntegrations(data.local_ai_mcp_integrations)),
+  };
+}
+
+function normalizeIntegrationForm(form) {
+  return {
+    type: 'ephemeral_mcp',
+    server_label: form.server_label.trim(),
+    server_url: form.server_url.trim(),
+    allowed_tools: form.allowed_tools.split(',').map(tool => tool.trim()).filter(Boolean),
+  };
+}
+
+function validateIntegration(integration) {
+  if (!integration.server_label) return 'MCP Server Label is required.';
+  if (!integration.server_url) return 'MCP Server URL is required.';
+  if (!isValidUrl(integration.server_url)) return 'MCP Server URL must be a valid http(s) URL.';
+  if (integration.allowed_tools.length === 0) return 'Allowed Tools must contain at least one tool.';
+  return null;
+}
+
+function parseIntegrations(value) {
+  if (Array.isArray(value)) return value.map(normalizeIntegration).filter(Boolean);
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(normalizeIntegration).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeIntegration(item) {
+  if (!item || typeof item !== 'object') return null;
+  const serverLabel = String(item.server_label ?? item.serverLabel ?? '').trim();
+  const serverUrl = String(item.server_url ?? item.serverUrl ?? '').trim();
+  const tools = Array.isArray(item.allowed_tools ?? item.allowedTools)
+    ? (item.allowed_tools ?? item.allowedTools).map(tool => String(tool).trim()).filter(Boolean)
+    : String(item.allowed_tools ?? item.allowedTools ?? '').split(',').map(tool => tool.trim()).filter(Boolean);
+  if (!serverLabel || !serverUrl || tools.length === 0) return null;
+  return { type: 'ephemeral_mcp', server_label: serverLabel, server_url: serverUrl, allowed_tools: [...new Set(tools)] };
+}
+
+function isValidUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function readFileAsDataUrl(file) {

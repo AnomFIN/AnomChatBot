@@ -472,6 +472,55 @@ describe('PUT /api/settings — Local AI, MCP, and branding validation', () => {
     expect(JSON.parse(res.body).error).toContain('Permission Token');
   });
 
+
+  it('accepts valid Ephemeral MCP integrations and persists mode', async () => {
+    const res = await fastify.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: {
+        local_ai_enabled: 'true',
+        local_ai_provider: 'lmstudio',
+        local_ai_base_url: 'http://127.0.0.1:1234/v1',
+        local_ai_model: 'local-model',
+        local_ai_mcp_mode: 'ephemeral',
+        local_ai_mcp_integrations: [{
+          type: 'ephemeral_mcp',
+          server_label: 'huggingface',
+          server_url: 'https://huggingface.co/mcp',
+          allowed_tools: ['model_search'],
+        }],
+      },
+    });
+
+    const body = JSON.parse(res.body);
+    expect(res.statusCode).toBe(200);
+    expect(body.data.local_ai_mcp_mode).toBe('ephemeral');
+    expect(JSON.parse(body.data.local_ai_mcp_integrations)[0].server_label).toBe('huggingface');
+  });
+
+  it('rejects invalid Ephemeral MCP URLs and duplicate integrations', async () => {
+    const res = await fastify.inject({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: {
+        local_ai_enabled: 'true',
+        local_ai_provider: 'lmstudio',
+        local_ai_base_url: 'http://127.0.0.1:1234/v1',
+        local_ai_model: 'local-model',
+        local_ai_mcp_mode: 'ephemeral',
+        local_ai_mcp_integrations: [
+          { server_label: 'hf', server_url: 'not-a-url', allowed_tools: ['model_search'] },
+          { server_label: 'hf', server_url: 'https://huggingface.co/mcp', allowed_tools: ['model_search'] },
+          { server_label: 'hf', server_url: 'https://huggingface.co/mcp', allowed_tools: ['dataset_search'] },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toContain('valid http(s) URL');
+    expect(JSON.parse(res.body).error).toContain('duplicate integration');
+  });
+
   it('rejects SVG chat backgrounds and branding payloads larger than 3MB', async () => {
     const svgBackground = `data:image/svg+xml;base64,${Buffer.from('<svg></svg>').toString('base64')}`;
     const svgRes = await fastify.inject({

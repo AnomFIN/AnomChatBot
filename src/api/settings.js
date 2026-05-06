@@ -1,6 +1,6 @@
 import { getConversation, updateConversationSettings } from '../persistence/conversations.js';
 import { getAllSettings, setSettingsBulk } from '../persistence/settings.js';
-import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, redactSecret } from '../config/index.js';
+import { VALID_TONES, VALID_FLIRTS, VALID_AI_APPROACH_MAX_MESSAGES, VALID_AI_APPROACH_DELAY_MINUTES, VALID_LOCAL_AI_MCP_MODES, redactSecret } from '../config/index.js';
 
 const MAX_BRANDING_DATA_BYTES = 3 * 1024 * 1024;
 const LOGO_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
@@ -53,7 +53,7 @@ export default async function settingsRoutes(fastify, opts) {
     // Validate Local AI / LM Studio settings
     const localEnabled = body.local_ai_enabled === true || body.local_ai_enabled === 'true' || body.local_ai_enabled === '1';
     const tokenEnabled = body.local_ai_use_permission_token === true || body.local_ai_use_permission_token === 'true' || body.local_ai_use_permission_token === '1';
-    const mcpEnabled = body.local_ai_mcp_enabled === true || body.local_ai_mcp_enabled === 'true' || body.local_ai_mcp_enabled === '1';
+    const mcpMode = normalizeMcpMode(body.local_ai_mcp_mode, body.local_ai_mcp_enabled);
 
     if (body.local_ai_provider !== undefined && body.local_ai_provider !== '' && body.local_ai_provider !== 'lmstudio') {
       errors.push('local_ai_provider must be lmstudio');
@@ -67,8 +67,15 @@ export default async function settingsRoutes(fastify, opts) {
     if (localEnabled && tokenEnabled && body.local_ai_permission_token !== undefined && !String(body.local_ai_permission_token).trim()) {
       errors.push('LM Studio Permission Token is required when token usage is enabled');
     }
-    if (localEnabled && mcpEnabled && body.local_ai_mcp_config_path !== undefined && !String(body.local_ai_mcp_config_path).trim()) {
-      errors.push('MCP config path is required when MCP is enabled');
+    if (body.local_ai_mcp_mode !== undefined && !VALID_LOCAL_AI_MCP_MODES.includes(mcpMode)) {
+      errors.push(`MCP Mode must be one of: ${VALID_LOCAL_AI_MCP_MODES.join(', ')}`);
+    }
+    if (localEnabled && mcpMode === 'local_config' && body.local_ai_mcp_config_path !== undefined && !String(body.local_ai_mcp_config_path).trim()) {
+      errors.push('MCP config path is required when Local MCP Config mode is enabled');
+    }
+    if (localEnabled && mcpMode === 'ephemeral') {
+      const integrationErrors = validateEphemeralMcpIntegrations(body.local_ai_mcp_integrations);
+      errors.push(...integrationErrors);
     }
 
     validateBrandingDataUrl(body.branding_top_bar_logo, 'branding_top_bar_logo', LOGO_MIME_TYPES, errors);
@@ -95,7 +102,7 @@ export default async function settingsRoutes(fastify, opts) {
       'ai_provider', 'ai_base_url', 'ai_model', 'ai_api_key',
       'local_ai_enabled', 'local_ai_provider', 'local_ai_base_url', 'local_ai_model',
       'local_ai_use_permission_token', 'local_ai_permission_token',
-      'local_ai_mcp_enabled', 'local_ai_mcp_config_path',
+      'local_ai_mcp_enabled', 'local_ai_mcp_mode', 'local_ai_mcp_config_path', 'local_ai_mcp_integrations',
       'branding_top_bar_logo', 'branding_chat_background',
     ];
 
@@ -116,6 +123,13 @@ export default async function settingsRoutes(fastify, opts) {
 
     if (Object.keys(updates).length === 0) {
       return { success: true, data: { message: 'No changes' } };
+    }
+
+    if (updates.local_ai_mcp_mode !== undefined) {
+      updates.local_ai_mcp_enabled = updates.local_ai_mcp_mode === 'disabled' ? 'false' : 'true';
+    }
+    if (updates.local_ai_mcp_integrations !== undefined && typeof updates.local_ai_mcp_integrations !== 'string') {
+      updates.local_ai_mcp_integrations = JSON.stringify(updates.local_ai_mcp_integrations);
     }
 
     setSettingsBulk(updates);
@@ -322,5 +336,69 @@ function validateBrandingDataUrl(value, key, allowedMimeTypes, errors) {
   const byteLength = Math.floor((payload.length * 3) / 4) - padding;
   if (byteLength > MAX_BRANDING_DATA_BYTES) {
     errors.push(`${key} must be 3MB or smaller`);
+  }
+}
+
+
+function normalizeMcpMode(mode, legacyEnabled) {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (normalized) return normalized;
+  return legacyEnabled === true || legacyEnabled === 'true' || legacyEnabled === '1' ? 'local_config' : 'disabled';
+}
+
+function validateEphemeralMcpIntegrations(value) {
+  const errors = [];
+  const integrations = parseIntegrationArray(value, errors);
+  if (errors.length > 0) return errors;
+  if (integrations.length === 0) return ['At least one Ephemeral MCP integration is required'];
+
+  const seen = new Set();
+  integrations.forEach((integration, index) => {
+    const prefix = `Integration ${index + 1}`;
+    const serverLabel = String(integration?.server_label ?? integration?.serverLabel ?? '').trim();
+    const serverUrl = String(integration?.server_url ?? integration?.serverUrl ?? '').trim();
+    const allowedTools = Array.isArray(integration?.allowed_tools ?? integration?.allowedTools)
+      ? (integration.allowed_tools ?? integration.allowedTools).map(tool => String(tool).trim()).filter(Boolean)
+      : String(integration?.allowed_tools ?? integration?.allowedTools ?? '').split(',').map(tool => tool.trim()).filter(Boolean);
+
+    if (!serverLabel) errors.push(`${prefix}: server label is required`);
+    if (!serverUrl) errors.push(`${prefix}: server URL is required`);
+    else if (!isValidHttpUrl(serverUrl)) errors.push(`${prefix}: server_url must be a valid http(s) URL`);
+    if (allowedTools.length === 0) errors.push(`${prefix}: allowed_tools must not be empty`);
+
+    const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}`;
+    if (seen.has(key)) errors.push(`${prefix}: duplicate integration for this server label and URL`);
+    seen.add(key);
+  });
+
+  return errors;
+}
+
+function parseIntegrationArray(value, errors) {
+  if (Array.isArray(value)) return value;
+  if (value === undefined || value === null || value === '') return [];
+  if (typeof value !== 'string') {
+    errors.push('local_ai_mcp_integrations must be a JSON array');
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      errors.push('local_ai_mcp_integrations must be a JSON array');
+      return [];
+    }
+    return parsed;
+  } catch {
+    errors.push('local_ai_mcp_integrations must be valid JSON');
+    return [];
+  }
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
   }
 }
