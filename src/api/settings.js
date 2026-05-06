@@ -365,15 +365,20 @@ function validateEphemeralMcpIntegrations(value) {
     const allowedTools = Array.isArray(integration?.allowed_tools ?? integration?.allowedTools)
       ? (integration.allowed_tools ?? integration.allowedTools).map(tool => String(tool).trim()).filter(Boolean)
       : String(integration?.allowed_tools ?? integration?.allowedTools ?? '').split(',').map(tool => tool.trim()).filter(Boolean);
+    const hasServerLabel = Boolean(serverLabel);
+    const hasServerUrl = Boolean(serverUrl);
+    const hasValidServerUrl = hasServerUrl && isValidHttpUrl(serverUrl);
 
-    if (!serverLabel) errors.push(`${prefix}: server label is required`);
-    if (!serverUrl) errors.push(`${prefix}: server URL is required`);
-    else if (!isValidHttpUrl(serverUrl)) errors.push(`${prefix}: server_url must be a valid http(s) URL`);
+    if (!hasServerLabel) errors.push(`${prefix}: server label is required`);
+    if (!hasServerUrl) errors.push(`${prefix}: server URL is required`);
+    else if (!hasValidServerUrl) errors.push(`${prefix}: server_url must be a valid http(s) URL`);
     if (allowedTools.length === 0) errors.push(`${prefix}: allowed_tools must not be empty`);
 
-    const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}`;
-    if (seen.has(key)) errors.push(`${prefix}: duplicate integration for this server label and URL`);
-    seen.add(key);
+    if (hasServerLabel && hasValidServerUrl) {
+      const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}`;
+      if (seen.has(key)) errors.push(`${prefix}: duplicate integration for this server label and URL`);
+      seen.add(key);
+    }
   });
 
   return errors;
