@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { SocketProvider } from './context/SocketContext.jsx';
 import { useConversations, useBotActivity } from './hooks/useConversations.js';
 import { useStatus } from './hooks/useStatus.js';
+import { getBranding } from './api/client.js';
 import StatusBar from './components/StatusBar.jsx';
 import ConversationList from './components/ConversationList.jsx';
 import ConversationView from './components/ConversationView.jsx';
@@ -24,8 +25,14 @@ function Dashboard() {
     const saved = localStorage.getItem('anomchatbot-sidebar-visible');
     return saved !== null ? JSON.parse(saved) : true;
   });
+  const [branding, setBranding] = useState({ logo_url: null, background_url: null });
 
   const selectedConversation = conversations.find(c => c.id === selectedId) || null;
+
+  // Load branding on mount and whenever the System tab is visited (in case it changed)
+  const loadBranding = () => getBranding().then(setBranding).catch(() => {});
+  useEffect(() => { loadBranding(); }, []);
+  useEffect(() => { if (activeTab === 'chat') loadBranding(); }, [activeTab]);
 
   useEffect(() => {
     localStorage.setItem('anomchatbot-sidebar-visible', JSON.stringify(showSidebar));
@@ -56,7 +63,7 @@ function Dashboard() {
 
   return (
     <div className="app-container">
-      <StatusBar status={status} botActivities={botActivities} />
+      <StatusBar status={status} botActivities={botActivities} logoUrl={branding.logo_url} />
 
       <div className="app-nav">
         <button className={activeTab === 'chat' ? 'active' : ''} onClick={() => setActiveTab('chat')}>
@@ -100,6 +107,7 @@ function Dashboard() {
                 conversationId={selectedId}
                 conversation={selectedConversation}
                 botActivity={botActivities[selectedId]}
+                backgroundUrl={branding.background_url}
               />
               {selectedId && (
                 <button

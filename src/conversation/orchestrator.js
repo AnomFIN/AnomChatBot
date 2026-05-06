@@ -22,9 +22,6 @@ import { createApproachManager } from './approachManager.js';
 import { createAIProvider } from '../ai/provider.js';
 import { downloadAndStore } from '../media/storage.js';
 
-// Placeholder API key used when no real credential is needed (local AI without token)
-const LOCAL_AI_DEFAULT_KEY = 'local-ai-key';
-
 /**
  * Create a disabled AI provider that always throws a clear error.
  * Used when Local AI is enabled but misconfigured, to prevent silent
@@ -89,6 +86,23 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
   // Cache per-conversation AI providers to avoid recreating each call
   const conversationProviders = new Map();
+
+  // Track AbortControllers for in-flight AI calls so they can be cancelled
+  // when a new message arrives or an operator takes over.
+  const activeAbortControllers = new Map();
+
+  /**
+   * Cancel any in-flight AI generation for a conversation.
+   * Safe to call even if no generation is running.
+   */
+  function _cancelActiveGeneration(conversationId) {
+    const ctrl = activeAbortControllers.get(conversationId);
+    if (ctrl) {
+      ctrl.abort();
+      activeAbortControllers.delete(conversationId);
+      log('info', `Aborted in-flight AI generation for ${conversationId}`);
+    }
+  }
 
   /**
    * Get the AI provider for a conversation.
@@ -173,10 +187,14 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       const token =
         settings.local_ai_permission_token || config.localAi?.permissionToken || '';
 
-      // Use permission token as apiKey so the SDK sends Authorization: Bearer <token>
-      const apiKey = (useToken && token) ? token : LOCAL_AI_DEFAULT_KEY;
+      // When a permission token is configured, use it as the api key so the SDK
+      // sends  Authorization: Bearer <token>.  When no token is required, set
+      // omitAuth=true so the Authorization header is stripped entirely — no
+      // dummy credential is ever transmitted to the local server.
+      const apiKey = (useToken && token) ? token : 'no-auth-local-ai';
+      const omitAuth = !(useToken && token);
 
-      const cacheKey = `local_ai|${baseUrl}|${model}|${apiKey}`;
+      const cacheKey = `local_ai|${baseUrl}|${model}|${omitAuth ? 'no-auth' : 'token'}`;
       if (conversationProviders.has(cacheKey)) {
         return conversationProviders.get(cacheKey);
       }
@@ -187,6 +205,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
           openaiApiKey: apiKey,
           openaiBaseUrl: baseUrl,
           openaiModel: model,
+          omitAuth,
         },
       };
 
@@ -289,8 +308,17 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       return;
     }
 
+    // Guard against empty responses — don't persist or send a blank message
+    const approachContent = aiReply.content?.trim() ?? '';
+    if (!approachContent) {
+      log('warn', `AI returned empty approach message for ${conversationId}, skipping`);
+      approachManager.stopTracking(conversationId, 'empty_response');
+      emit('bot:activity', { conversationId, state: 'idle' });
+      return;
+    }
+
     // Persist approach message
-    const approachMessage = addMessage(conversationId, 'assistant', aiReply.content, {
+    const approachMessage = addMessage(conversationId, 'assistant', approachContent, {
       token_count: aiReply.tokenUsage?.total ?? null,
       direction: 'outbound',
       delivery_status: 'queued',
@@ -299,7 +327,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     emit('message:new', { conversationId, message: approachMessage });
 
     // Send via transport with presence simulation
-    await _sendWithPresence(conversation, approachMessage, aiReply.content);
+    await _sendWithPresence(conversation, approachMessage, approachContent);
 
     touchConversation(conversationId);
     log('info', `Sent approach message ${approachInfo.messageNumber}/${approachInfo.maxMessages} for ${conversationId}`);
@@ -308,6 +336,8 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
   /**
    * Process a delayed AI reply after the delay timer expires.
    * Checks version token to prevent stale replies.
+   * Creates an AbortController so the in-flight request can be cancelled if a
+   * newer message arrives before the AI finishes.
    */
   async function _processDelayedReply(conversationId, version) {
     // Version check — if newer messages arrived and reset the timer,
@@ -338,19 +368,35 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
     const messages = buildMessages(conversation, recentMessages, config);
 
+    // Create an AbortController for this generation.  If a new inbound message
+    // resets the timer (or an operator takes over) before the AI responds, the
+    // request will be aborted via _cancelActiveGeneration().
+    const ctrl = new AbortController();
+    activeAbortControllers.set(conversationId, ctrl);
+
     let aiReply;
     try {
       const provider = getAIProvider(conversation);
       aiReply = await provider.generateReply(messages, {
         temperature: conversation.temperature,
         max_tokens: conversation.max_tokens,
+        signal: ctrl.signal,
       });
     } catch (err) {
+      activeAbortControllers.delete(conversationId);
+      // AbortError means we intentionally cancelled — not an error condition
+      if (err.name === 'AbortError' || ctrl.signal.aborted) {
+        log('info', `AI generation cancelled for ${conversationId} (aborted by newer message)`);
+        delayManager.complete(conversationId);
+        emit('bot:activity', { conversationId, state: 'idle' });
+        return;
+      }
       log('error', `AI error for ${conversationId}: ${err.message}`);
       delayManager.complete(conversationId);
       emit('bot:activity', { conversationId, state: 'idle' });
       return;
     }
+    activeAbortControllers.delete(conversationId);
 
     // Version check AGAIN after AI call (more messages may have arrived while waiting for AI)
     if (!delayManager.isCurrentVersion(conversationId, version)) {
@@ -358,8 +404,17 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       return;
     }
 
+    // Guard against empty responses — don't persist or send a blank message
+    const content = aiReply.content?.trim() ?? '';
+    if (!content) {
+      log('warn', `AI returned empty response for ${conversationId}, skipping`);
+      delayManager.complete(conversationId);
+      emit('bot:activity', { conversationId, state: 'idle' });
+      return;
+    }
+
     // Persist AI response
-    const aiMessage = addMessage(conversationId, 'assistant', aiReply.content, {
+    const aiMessage = addMessage(conversationId, 'assistant', content, {
       token_count: aiReply.tokenUsage?.total ?? null,
       direction: 'outbound',
       delivery_status: 'queued',
@@ -368,7 +423,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     emit('message:new', { conversationId, message: aiMessage });
 
     // Send via transport with presence simulation
-    await _sendWithPresence(conversation, aiMessage, aiReply.content);
+    await _sendWithPresence(conversation, aiMessage, content);
 
     touchConversation(conversationId);
     delayManager.complete(conversationId);
@@ -550,7 +605,9 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       approachManager.trackUserMessage(conversation.id, conversation);
     }
 
-    // 6. Schedule delayed reply (resets timer if already pending — multi-message batching)
+    // 6. Cancel any in-flight AI generation and schedule a fresh delayed reply.
+    // The new message may change the context, so any ongoing generation is stale.
+    _cancelActiveGeneration(conversation.id);
     delayManager.scheduleReply(conversation.id, conversation);
 
     return {
@@ -583,6 +640,9 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       emit('bot:activity', { conversationId, state: 'idle' });
       log('info', `Cancelled pending AI reply for ${conversationId} — operator message`);
     }
+
+    // Cancel any in-flight AI generation — operator is taking over
+    _cancelActiveGeneration(conversationId);
 
     // Cancel any pending approach — operator is engaging
     if (approachManager.isTracking(conversationId)) {

@@ -9,7 +9,7 @@ const ACTIVITY_DISPLAY = {
   sending: '📤 Bot is sending…',
 };
 
-export default function ConversationView({ conversationId, conversation, botActivity }) {
+export default function ConversationView({ conversationId, conversation, botActivity, backgroundUrl }) {
   const { messages, loading } = useMessages(conversationId);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -73,7 +73,16 @@ export default function ConversationView({ conversationId, conversation, botActi
         </span>
       </div>
 
-      <div className="messages-container">
+      <div
+        className="messages-container"
+        style={backgroundUrl ? {
+          backgroundImage: `url(${backgroundUrl})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'local',
+        } : undefined}
+      >
+        {backgroundUrl && <div className="messages-bg-overlay" />}
         {loading && <div className="messages-loading">Loading messages…</div>}
         {messages.map(m => (
           <MessageBubble key={m.id} message={m} />
@@ -94,7 +103,7 @@ export default function ConversationView({ conversationId, conversation, botActi
           disabled={sending}
         />
         <button onClick={handleSend} disabled={sending || !input.trim()}>
-          {sending ? '…' : 'Send'}
+          {sending ? '…' : '↑ Send'}
         </button>
       </div>
     </div>

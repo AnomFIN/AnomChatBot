@@ -6,11 +6,13 @@ import { createAIProvider } from './ai/provider.js';
 import { createOrchestrator } from './conversation/orchestrator.js';
 import { createTransportManager } from './transport/manager.js';
 import { createTelegramAdmin } from './admin/telegram.js';
+import multipart from '@fastify/multipart';
 import healthRoutes from './api/health.js';
 import conversationRoutes from './api/conversations.js';
 import settingsRoutes from './api/settings.js';
 import webhookRoutes from './api/webhook.js';
 import presetRoutes from './api/presets.js';
+import brandingRoutes from './api/branding.js';
 
 async function main() {
   // ── 1. Load and validate config ──────────────────────────────────────────
@@ -89,9 +91,11 @@ async function main() {
   await transportManager.initialize();
 
   // ── 8. Register routes ───────────────────────────────────────────────────
+  fastify.register(multipart, { limits: { fileSize: 6 * 1024 * 1024 } }); // 6 MB hard limit (branding: 5 MB)
   fastify.register(healthRoutes, { config, aiProvider, transportManager, orchestrator });
   fastify.register(conversationRoutes, { orchestrator, config, transportManager, io });
   fastify.register(settingsRoutes, { io });
+  fastify.register(brandingRoutes);
   fastify.register(presetRoutes);
 
   // Register webhook routes only for Cloud API mode

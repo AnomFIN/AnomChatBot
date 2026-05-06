@@ -353,3 +353,143 @@ describe('Orchestrator — Local AI provider selection', () => {
     orchestrator.shutdown();
   });
 });
+
+// ── Empty response / autonomous follow-up guard ──────────────────────────────
+describe('Orchestrator — empty AI response guard', () => {
+  let mockIO;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    cleanupTestDb();
+    initDatabase(TEST_CONFIG);
+    mockIO = createMockIO();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    closeDatabase();
+    cleanupTestDb();
+  });
+
+  it('does not persist or send an assistant message when AI returns empty content', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    setSettingsBulk({ reply_delay_min: '3000', reply_delay_max: '3000' });
+
+    const emptyAI = {
+      generateReply: vi.fn().mockResolvedValue({ content: '   ', tokenUsage: { total: 0 } }),
+      testConnection: vi.fn(),
+      getStatus: vi.fn().mockReturnValue({ connected: true }),
+    };
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, emptyAI, mockIO);
+    const { conversation } = await orchestrator.handleIncomingMessage('api', 'empty-1', 'User', 'Hello');
+
+    await vi.advanceTimersByTimeAsync(3500);
+
+    expect(emptyAI.generateReply).toHaveBeenCalledOnce();
+
+    const messages = getRecentMessages(conversation.id, 10);
+    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    expect(assistantMessages).toHaveLength(0);
+
+    orchestrator.shutdown();
+  });
+
+  it('does not persist or send when AI returns null content', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    setSettingsBulk({ reply_delay_min: '3000', reply_delay_max: '3000' });
+
+    const nullAI = {
+      generateReply: vi.fn().mockResolvedValue({ content: null, tokenUsage: { total: 0 } }),
+      testConnection: vi.fn(),
+      getStatus: vi.fn().mockReturnValue({ connected: true }),
+    };
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, nullAI, mockIO);
+    const { conversation } = await orchestrator.handleIncomingMessage('api', 'empty-2', 'User', 'Hello');
+
+    await vi.advanceTimersByTimeAsync(3500);
+
+    const messages = getRecentMessages(conversation.id, 10);
+    expect(messages.filter(m => m.role === 'assistant')).toHaveLength(0);
+
+    orchestrator.shutdown();
+  });
+
+  it('persists assistant message when AI returns non-empty content', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    setSettingsBulk({ reply_delay_min: '3000', reply_delay_max: '3000' });
+
+    const goodAI = createMockAIProvider('Hello there!');
+    const orchestrator = createOrchestrator(TEST_CONFIG, goodAI, mockIO);
+    const { conversation } = await orchestrator.handleIncomingMessage('api', 'empty-3', 'User', 'Hello');
+
+    await vi.advanceTimersByTimeAsync(3500);
+
+    const messages = getRecentMessages(conversation.id, 10);
+    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].content).toBe('Hello there!');
+
+    orchestrator.shutdown();
+  });
+});
+
+// ── AbortController — generation cancellation ─────────────────────────────────
+describe('Orchestrator — AbortController generation cancellation', () => {
+  let mockIO;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    cleanupTestDb();
+    initDatabase(TEST_CONFIG);
+    mockIO = createMockIO();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    closeDatabase();
+    cleanupTestDb();
+  });
+
+  it('cancels in-flight AI generation when a second message resets the timer', async () => {
+    const { setSettingsBulk } = await import('../src/persistence/settings.js');
+    setSettingsBulk({ reply_delay_min: '5000', reply_delay_max: '5000' });
+
+    let capturedSignal = null;
+    const slowAI = {
+      generateReply: vi.fn().mockImplementation(async (_msgs, opts) => {
+        capturedSignal = opts?.signal ?? null;
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        return { content: 'Slow reply', tokenUsage: { total: 0 } };
+      }),
+      testConnection: vi.fn(),
+      getStatus: vi.fn().mockReturnValue({ connected: true }),
+    };
+
+    const orchestrator = createOrchestrator(TEST_CONFIG, slowAI, mockIO);
+
+    await orchestrator.handleIncomingMessage('api', 'abort-1', 'User', 'Message A');
+    await vi.advanceTimersByTimeAsync(5000); // timer fires, AI starts
+
+    // Second message arrives while AI is running
+    await orchestrator.handleIncomingMessage('api', 'abort-1', 'User', 'Message B');
+
+    expect(capturedSignal?.aborted).toBe(true);
+
+    orchestrator.shutdown();
+  });
+
+  it('does not error when operator message arrives and no generation is running', async () => {
+    const mockAI = createMockAIProvider();
+    const orchestrator = createOrchestrator(TEST_CONFIG, mockAI, mockIO);
+
+    const { conversation } = await orchestrator.handleIncomingMessage('api', 'abort-2', 'User', 'Hello');
+
+    await expect(
+      orchestrator.handleOperatorMessage(conversation.id, 'Hi from operator')
+    ).resolves.toBeTruthy();
+
+    orchestrator.shutdown();
+  });
+});

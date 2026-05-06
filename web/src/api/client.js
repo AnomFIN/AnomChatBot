@@ -94,8 +94,35 @@ export function deletePreset(id) {
   return request(`/presets/${id}`, { method: 'DELETE' });
 }
 
-// ── Global settings ──────────────────────────────────────────────────────
-export function getGlobalSettings() {
+// ── Branding ─────────────────────────────────────────────────────────────
+export function getBranding() {
+  return request('/settings/branding').then(d => d.data);
+}
+
+export function uploadBrandingLogo(file) {
+  const form = new FormData();
+  form.append('file', file);
+  // Don't set Content-Type — browser sets it automatically with correct boundary
+  return fetch(`${BASE}/settings/branding/logo`, { method: 'POST', body: form })
+    .then(r => r.json())
+    .then(d => { if (!d.success) throw new Error(d.error); return d.data; });
+}
+
+export function resetBrandingLogo() {
+  return request('/settings/branding/logo', { method: 'DELETE' }).then(d => d.data);
+}
+
+export function uploadBrandingBackground(file) {
+  const form = new FormData();
+  form.append('file', file);
+  return fetch(`${BASE}/settings/branding/background`, { method: 'POST', body: form })
+    .then(r => r.json())
+    .then(d => { if (!d.success) throw new Error(d.error); return d.data; });
+}
+
+export function resetBrandingBackground() {
+  return request('/settings/branding/background', { method: 'DELETE' }).then(d => d.data);
+}
   return request('/settings').then(d => d.data);
 }
 

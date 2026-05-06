@@ -9,6 +9,7 @@ import fastifyStatic from '@fastify/static';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = join(__dirname, '../web/dist');
 const MEDIA_DIR = join(process.cwd(), 'data', 'media');
+const BRANDING_DIR = join(process.cwd(), 'data', 'branding');
 
 /**
  * Create and configure the Fastify server instance.
@@ -43,7 +44,7 @@ export function createServer(config) {
 
     // SPA fallback: non-API routes serve index.html
     fastify.setNotFoundHandler((request, reply) => {
-      if (request.url.startsWith('/api/') || request.url.startsWith('/webhook/') || request.url.startsWith('/media/')) {
+      if (request.url.startsWith('/api/') || request.url.startsWith('/webhook/') || request.url.startsWith('/media/') || request.url.startsWith('/branding/')) {
         reply.code(404).send({ success: false, error: 'Not found' });
       } else {
         reply.sendFile('index.html');
@@ -51,7 +52,7 @@ export function createServer(config) {
     });
   } else {
     fastify.setNotFoundHandler((request, reply) => {
-      if (request.url.startsWith('/api/') || request.url.startsWith('/webhook/') || request.url.startsWith('/media/')) {
+      if (request.url.startsWith('/api/') || request.url.startsWith('/webhook/') || request.url.startsWith('/media/') || request.url.startsWith('/branding/')) {
         reply.code(404).send({ success: false, error: 'Not found' });
       } else {
         reply.code(200).type('text/html').send(
@@ -71,6 +72,15 @@ export function createServer(config) {
     decorateReply: false,
     cacheControl: true,
     maxAge: 86400000, // 24h cache
+  });
+
+  // Serve branding files (logo, background) at /branding/{filename}
+  mkdirSync(BRANDING_DIR, { recursive: true });
+  fastify.register(fastifyStatic, {
+    root: BRANDING_DIR,
+    prefix: '/branding/',
+    decorateReply: false,
+    cacheControl: false,
   });
 
   return fastify;

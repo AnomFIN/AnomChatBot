@@ -1,5 +1,15 @@
-import { useState, useEffect } from 'react';
-import { getGlobalSettings, updateGlobalSettings } from '../api/client.js';
+import { useState, useEffect, useRef } from 'react';
+import {
+  getGlobalSettings, updateGlobalSettings,
+  getBranding, uploadBrandingLogo, resetBrandingLogo,
+  uploadBrandingBackground, resetBrandingBackground,
+} from '../api/client.js';
+
+const LOGO_ACCEPT = '.png,.jpg,.jpeg,.webp,.svg';
+const BG_ACCEPT = '.png,.jpg,.jpeg,.webp';
+const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+const BG_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 export default function GlobalSettings({ status }) {
   const [settings, setSettings] = useState(null);
@@ -8,8 +18,18 @@ export default function GlobalSettings({ status }) {
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
 
+  // Branding state
+  const [branding, setBranding] = useState({ logo_url: null, background_url: null });
+  const [brandingError, setBrandingError] = useState(null);
+  const [brandingUploading, setBrandingUploading] = useState({ logo: false, bg: false });
+  const [logoPreview, setLogoPreview] = useState(null);
+  const [bgPreview, setBgPreview] = useState(null);
+  const logoInputRef = useRef(null);
+  const bgInputRef = useRef(null);
+
   useEffect(() => {
     loadSettings();
+    loadBranding();
   }, []);
 
   const loadSettings = async () => {
@@ -21,6 +41,13 @@ export default function GlobalSettings({ status }) {
     } finally {
       setLoadingSettings(false);
     }
+  };
+
+  const loadBranding = async () => {
+    try {
+      const data = await getBranding();
+      setBranding(data);
+    } catch {}
   };
 
   const handleChange = (key, value) => {
@@ -42,7 +69,82 @@ export default function GlobalSettings({ status }) {
     }
   };
 
+  const validateBrandingFile = (file, allowedTypes) => {
+    if (!allowedTypes.includes(file.type)) {
+      return `Unsupported file type: ${file.type}. Allowed: ${allowedTypes.join(', ')}`;
+    }
+    if (file.size > MAX_SIZE) {
+      return `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum: 5 MB`;
+    }
+    return null;
+  };
+
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBrandingError(null);
+    const err = validateBrandingFile(file, LOGO_TYPES);
+    if (err) { setBrandingError(err); return; }
+    setLogoPreview(URL.createObjectURL(file));
+    setBrandingUploading(p => ({ ...p, logo: true }));
+    try {
+      const data = await uploadBrandingLogo(file);
+      setBranding(p => ({ ...p, logo_url: data.url }));
+    } catch (err) {
+      setBrandingError(err.message);
+      setLogoPreview(null);
+    } finally {
+      setBrandingUploading(p => ({ ...p, logo: false }));
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  };
+
+  const handleLogoReset = async () => {
+    setBrandingError(null);
+    try {
+      await resetBrandingLogo();
+      setBranding(p => ({ ...p, logo_url: null }));
+      setLogoPreview(null);
+    } catch (err) {
+      setBrandingError(err.message);
+    }
+  };
+
+  const handleBgUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBrandingError(null);
+    const err = validateBrandingFile(file, BG_TYPES);
+    if (err) { setBrandingError(err); return; }
+    setBgPreview(URL.createObjectURL(file));
+    setBrandingUploading(p => ({ ...p, bg: true }));
+    try {
+      const data = await uploadBrandingBackground(file);
+      setBranding(p => ({ ...p, background_url: data.url }));
+    } catch (err) {
+      setBrandingError(err.message);
+      setBgPreview(null);
+    } finally {
+      setBrandingUploading(p => ({ ...p, bg: false }));
+      if (bgInputRef.current) bgInputRef.current.value = '';
+    }
+  };
+
+  const handleBgReset = async () => {
+    setBrandingError(null);
+    try {
+      await resetBrandingBackground();
+      setBranding(p => ({ ...p, background_url: null }));
+      setBgPreview(null);
+    } catch (err) {
+      setBrandingError(err.message);
+    }
+  };
+
   if (!status) return <div className="global-settings">Loading…</div>;
+
+  const currentLogoUrl = logoPreview || branding.logo_url;
+  const currentBgUrl = bgPreview || branding.background_url;
 
   return (
     <div className="global-settings">
@@ -352,6 +454,83 @@ export default function GlobalSettings({ status }) {
           </button>
         </div>
       )}
+
+      {/* ── Branding / Visual Settings ───────────────────────────────── */}
+      <h3 className="gs-editable-header" style={{ marginTop: '28px' }}>Branding / Visual Settings</h3>
+      <span className="field-hint" style={{ display: 'block', marginBottom: '12px' }}>
+        Upload a custom top-bar logo and chat background image.
+        Images are served from <code>/branding/</code> and applied immediately.
+        Max file size: 5 MB.
+      </span>
+
+      {brandingError && <div className="settings-error">{brandingError}</div>}
+
+      <div className="settings-form gs-form">
+        <div className="gs-section">
+          <h4>Top Bar Logo</h4>
+          <span className="field-hint">PNG · JPG · WEBP · SVG · aspect ratio preserved · no stretching</span>
+
+          {currentLogoUrl && (
+            <div className="branding-preview">
+              <img
+                src={currentLogoUrl}
+                alt="Logo preview"
+                className="branding-preview-logo"
+              />
+            </div>
+          )}
+
+          <div className="branding-actions">
+            <label className="btn-upload">
+              {brandingUploading.logo ? 'Uploading…' : 'Choose Logo'}
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept={LOGO_ACCEPT}
+                style={{ display: 'none' }}
+                disabled={brandingUploading.logo}
+                onChange={handleLogoUpload}
+              />
+            </label>
+            {branding.logo_url && (
+              <button className="btn-reset" onClick={handleLogoReset} disabled={brandingUploading.logo}>
+                Reset Logo
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="gs-section">
+          <h4>Chat Background Image</h4>
+          <span className="field-hint">PNG · JPG · WEBP · cover + center · semi-transparent overlay for readability</span>
+
+          {currentBgUrl && (
+            <div className="branding-preview branding-preview-bg"
+              style={{ backgroundImage: `url(${currentBgUrl})` }}>
+              <span className="branding-preview-label">Background preview</span>
+            </div>
+          )}
+
+          <div className="branding-actions">
+            <label className="btn-upload">
+              {brandingUploading.bg ? 'Uploading…' : 'Choose Background'}
+              <input
+                ref={bgInputRef}
+                type="file"
+                accept={BG_ACCEPT}
+                style={{ display: 'none' }}
+                disabled={brandingUploading.bg}
+                onChange={handleBgUpload}
+              />
+            </label>
+            {branding.background_url && (
+              <button className="btn-reset" onClick={handleBgReset} disabled={brandingUploading.bg}>
+                Reset Background
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

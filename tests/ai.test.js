@@ -219,3 +219,94 @@ describe('AI Provider — baseURL override', () => {
     expect(provider.getStatus().provider).toBe('openai_compatible');
   });
 });
+
+describe('AI Provider — omitAuth (Local AI without token)', () => {
+  it('does NOT add a custom fetch function when omitAuth is not set', async () => {
+    vi.clearAllMocks();
+    const OpenAI = (await import('openai')).default;
+    createAIProvider(makeConfig());
+    const constructorOpts = OpenAI.mock.calls[0][0];
+    expect(constructorOpts.fetch).toBeUndefined();
+  });
+
+  it('adds a custom fetch function when omitAuth=true', async () => {
+    vi.clearAllMocks();
+    const OpenAI = (await import('openai')).default;
+    createAIProvider(makeConfig({ omitAuth: true }));
+    const constructorOpts = OpenAI.mock.calls[0][0];
+    expect(typeof constructorOpts.fetch).toBe('function');
+  });
+
+  it('custom fetch strips the Authorization header but keeps other headers', async () => {
+    vi.clearAllMocks();
+    const OpenAI = (await import('openai')).default;
+    createAIProvider(makeConfig({ omitAuth: true }));
+    const { fetch: customFetch } = OpenAI.mock.calls[0][0];
+
+    // Replace global fetch temporarily
+    const capturedCalls = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (url, init) => {
+      capturedCalls.push({ url, init });
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    };
+
+    await customFetch('http://localhost:1234/v1/chat', {
+      headers: {
+        authorization: 'Bearer no-auth-local-ai',
+        'content-type': 'application/json',
+        'x-custom': 'value',
+      },
+    });
+
+    globalThis.fetch = originalFetch;
+
+    expect(capturedCalls).toHaveLength(1);
+    const sentHeaders = capturedCalls[0].init.headers;
+    // Headers is a Headers instance; check via .get()
+    expect(sentHeaders.get('authorization')).toBeNull();
+    expect(sentHeaders.get('content-type')).toBe('application/json');
+    expect(sentHeaders.get('x-custom')).toBe('value');
+  });
+});
+
+describe('AI Provider — AbortSignal support', () => {
+  let provider;
+  let mockCreate;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const OpenAI = (await import('openai')).default;
+    provider = createAIProvider(makeConfig());
+    const instance = OpenAI.mock.results[0].value;
+    mockCreate = instance.chat.completions.create;
+  });
+
+  it('passes AbortSignal to the API call', async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: 'OK' } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+
+    const ctrl = new AbortController();
+    await provider.generateReply([{ role: 'user', content: 'test' }], { signal: ctrl.signal });
+
+    const requestOpts = mockCreate.mock.calls[0][1];
+    expect(requestOpts.signal).toBe(ctrl.signal);
+  });
+
+  it('propagates AbortError without classifying or retrying', async () => {
+    const abortErr = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    mockCreate.mockRejectedValueOnce(abortErr);
+
+    const ctrl = new AbortController();
+    ctrl.abort();
+
+    await expect(
+      provider.generateReply([{ role: 'user', content: 'test' }], { signal: ctrl.signal })
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    // Should NOT have retried
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});

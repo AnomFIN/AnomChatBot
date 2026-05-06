@@ -4,10 +4,16 @@ import OpenAI from 'openai';
  * Create an AI provider backed by the OpenAI SDK.
  * Supports both 'openai' and 'openai_compatible' (via baseURL override).
  *
+ * Options:
+ *   config.ai.omitAuth — when true, strips the Authorization header from every
+ *   request so that local AI servers that don't require authentication receive
+ *   no credential header at all.  A dummy api-key string is still required by
+ *   the OpenAI SDK constructor, but it is silently removed before the HTTP call.
+ *
  * Returns an object with: generateReply, testConnection, getStatus.
  */
 export function createAIProvider(config) {
-  const { provider, openaiApiKey, openaiBaseUrl, openaiModel } = config.ai;
+  const { provider, openaiApiKey, openaiBaseUrl, openaiModel, omitAuth } = config.ai;
 
   const clientOpts = {
     apiKey: openaiApiKey || 'not-set',
@@ -16,6 +22,17 @@ export function createAIProvider(config) {
 
   if (openaiBaseUrl) {
     clientOpts.baseURL = openaiBaseUrl;
+  }
+
+  // When omitAuth is true the caller does not want any Authorization header sent
+  // (e.g. LM Studio without a permission token).  We override the SDK's fetch
+  // to delete the header just before the network call is made.
+  if (omitAuth) {
+    clientOpts.fetch = async (url, init) => {
+      const headers = new Headers(init?.headers ?? {});
+      headers.delete('authorization');
+      return globalThis.fetch(url, { ...init, headers });
+    };
   }
 
   const client = new OpenAI(clientOpts);
@@ -37,6 +54,8 @@ export function createAIProvider(config) {
     const model = options.model || openaiModel;
     const temperature = options.temperature ?? 0.7;
     const maxTokens = options.max_tokens ?? 1000;
+    // AbortSignal support: caller can abort an in-flight request by passing signal.
+    const signal = options.signal ?? null;
 
     // Check if any message has multimodal content (array format)
     const hasMultimodal = messages.some(m => Array.isArray(m.content));
@@ -52,7 +71,7 @@ export function createAIProvider(config) {
           messages,
           temperature,
           max_tokens: maxTokens,
-        }, { timeout });
+        }, { timeout, signal });
 
         const choice = response.choices?.[0];
         const content = choice?.message?.content ?? '';
@@ -72,6 +91,11 @@ export function createAIProvider(config) {
       } catch (err) {
         lastErr = err;
 
+        // Propagate abort immediately — no retry, no wrapping
+        if (err.name === 'AbortError' || signal?.aborted) {
+          throw err;
+        }
+
         // If multimodal failed (model doesn't support vision), fall back to text-only
         if (hasMultimodal && attempt === 0 && !isRateLimitError(err)) {
           const textOnlyMessages = stripMultimodalContent(messages);
@@ -81,7 +105,7 @@ export function createAIProvider(config) {
               messages: textOnlyMessages,
               temperature,
               max_tokens: maxTokens,
-            });
+            }, { signal });
 
             const choice = fallbackResponse.choices?.[0];
             const content = choice?.message?.content ?? '';

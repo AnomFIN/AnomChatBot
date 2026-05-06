@@ -34,11 +34,16 @@ function Dot({ color }) {
   );
 }
 
-export default function StatusBar({ status, botActivities }) {
+export default function StatusBar({ status, botActivities, logoUrl }) {
   const { connected: socketConnected } = useSocketContext();
 
   if (!status) {
-    return <div className="status-bar">Loading status…</div>;
+    return (
+      <div className="status-bar">
+        {logoUrl && <img src={logoUrl} alt="Logo" className="status-bar-logo" />}
+        Loading status…
+      </div>
+    );
   }
 
   const waStatus = status.whatsapp?.status || 'idle';
@@ -54,6 +59,7 @@ export default function StatusBar({ status, botActivities }) {
 
   return (
     <div className="status-bar">
+      {logoUrl && <img src={logoUrl} alt="Logo" className="status-bar-logo" />}
       <div className="status-item">
         <Dot color={socketConnected ? '#22c55e' : '#ef4444'} />
         <span>Socket: {socketConnected ? 'connected' : 'disconnected'}</span>
