@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createAIProvider, normalizeLmStudioMessageContent, serializeMessagesForLmStudioInput } from '../src/ai/provider.js';
+import { createAIProvider, normalizeLmStudioMessageContent, normalizeLmStudioApiChatResponse, normalizeEphemeralMcpIntegrations, serializeMessagesForLmStudioInput } from '../src/ai/provider.js';
 
 // Mock the OpenAI module
 vi.mock('openai', () => {
@@ -541,6 +541,40 @@ User: What are trending models on Hugging Face?`);
 
     await provider.generateReply([{ role: 'user', content: 'Hi' }]);
     expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:1234/v1/chat/completions', expect.any(Object));
+  });
+
+  it('normalizeLmStudioApiChatResponse computes total from prompt+completion when total_tokens is absent', () => {
+    const result = normalizeLmStudioApiChatResponse({
+      output: [{ type: 'message', content: 'hi' }],
+      usage: { input_tokens: 8, output_tokens: 4 },
+    });
+    expect(result.tokenUsage).toEqual({ prompt: 8, completion: 4, total: 12 });
+  });
+
+  it('normalizeLmStudioApiChatResponse uses total_tokens when present', () => {
+    const result = normalizeLmStudioApiChatResponse({
+      output: [{ type: 'message', content: 'hi' }],
+      usage: { input_tokens: 8, output_tokens: 4, total_tokens: 15 },
+    });
+    expect(result.tokenUsage).toEqual({ prompt: 8, completion: 4, total: 15 });
+  });
+
+  it('normalizeEphemeralMcpIntegrations merges allowed_tools for same server_label+server_url', () => {
+    const result = normalizeEphemeralMcpIntegrations([
+      { server_label: 'brave', server_url: 'http://localhost:8000/mcp', allowed_tools: ['brave_web_search'] },
+      { server_label: 'brave', server_url: 'http://localhost:8000/mcp', allowed_tools: ['brave_news_search'] },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].allowed_tools).toEqual(expect.arrayContaining(['brave_web_search', 'brave_news_search']));
+    expect(result[0].server_label).toBe('brave');
+  });
+
+  it('normalizeEphemeralMcpIntegrations keeps distinct entries with different label or url', () => {
+    const result = normalizeEphemeralMcpIntegrations([
+      { server_label: 'brave', server_url: 'http://localhost:8000/mcp', allowed_tools: ['brave_web_search'] },
+      { server_label: 'huggingface', server_url: 'https://huggingface.co/mcp', allowed_tools: ['hub_repo_search'] },
+    ]);
+    expect(result).toHaveLength(2);
   });
 
 });

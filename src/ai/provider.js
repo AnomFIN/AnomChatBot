@@ -247,8 +247,9 @@ export function normalizeMcpMode(value, legacyEnabled = false) {
 export function normalizeEphemeralMcpIntegrations(value) {
   const raw = typeof value === 'string' ? parseJsonArray(value) : value;
   if (!Array.isArray(raw)) return [];
-  const seen = new Set();
-  const normalized = [];
+
+  // Dedupe by server_label+server_url, merging allowed_tools across duplicates
+  const integrationMap = new Map();
 
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
@@ -260,19 +261,22 @@ export function normalizeEphemeralMcpIntegrations(value) {
       : String(allowedToolsRaw).split(',').map(tool => tool.trim()).filter(Boolean);
 
     if (!serverLabel || !serverUrl || allowedTools.length === 0 || !isValidUrl(serverUrl)) continue;
-    const dedupedTools = [...new Set(allowedTools)];
-    const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}|${dedupedTools.map(t => t.toLowerCase()).sort().join(',')}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    normalized.push({
-      type: 'ephemeral_mcp',
-      server_label: serverLabel,
-      server_url: serverUrl,
-      allowed_tools: dedupedTools,
-    });
+
+    const key = `${serverLabel.toLowerCase()}|${serverUrl.toLowerCase()}`;
+    if (integrationMap.has(key)) {
+      const existing = integrationMap.get(key);
+      for (const tool of allowedTools) existing.toolSet.add(tool);
+    } else {
+      integrationMap.set(key, { serverLabel, serverUrl, toolSet: new Set(allowedTools) });
+    }
   }
 
-  return normalized;
+  return [...integrationMap.values()].map(({ serverLabel, serverUrl, toolSet }) => ({
+    type: 'ephemeral_mcp',
+    server_label: serverLabel,
+    server_url: serverUrl,
+    allowed_tools: [...toolSet],
+  }));
 }
 
 export function buildLocalAIChatCompletionsBody({ model, messages, temperature, maxTokens, integrations = [] }) {
@@ -373,12 +377,14 @@ const TOOL_ONLY_RESPONSE_FALLBACK = 'Haku ei tuottanut suoraa vastausta. Kokeile
 export function normalizeLmStudioApiChatResponse(response) {
   const content = normalizeLmStudioMessageContent(response);
   const usage = response?.usage ?? {};
+  const prompt = usage.prompt_tokens ?? usage.input_tokens ?? 0;
+  const completion = usage.completion_tokens ?? usage.output_tokens ?? 0;
   return {
     content,
     tokenUsage: {
-      prompt: usage.prompt_tokens ?? usage.input_tokens ?? 0,
-      completion: usage.completion_tokens ?? usage.output_tokens ?? 0,
-      total: usage.total_tokens ?? 0,
+      prompt,
+      completion,
+      total: usage.total_tokens ?? (prompt + completion),
     },
   };
 }

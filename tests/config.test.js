@@ -269,6 +269,61 @@ describe('Config — Local AI / LM Studio', () => {
     expect(result.errors.some(e => e.includes('LOCAL_AI_MCP_INTEGRATIONS'))).toBe(true);
   });
 
+  it('rejects empty Ephemeral MCP integrations array', () => {
+    const result = validateConfig({
+      ...BASE_ENV,
+      LOCAL_AI_ENABLED: 'true',
+      LOCAL_AI_MODEL: 'qwen-local',
+      LOCAL_AI_MCP_MODE: 'ephemeral',
+      LOCAL_AI_MCP_INTEGRATIONS: '[]',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('LOCAL_AI_MCP_INTEGRATIONS') && e.includes('empty'))).toBe(true);
+  });
+
+  it('rejects Ephemeral MCP integration with missing server_label', () => {
+    const integrations = JSON.stringify([{ server_url: 'https://huggingface.co/mcp', allowed_tools: ['hub_repo_search'] }]);
+    const result = validateConfig({
+      ...BASE_ENV,
+      LOCAL_AI_ENABLED: 'true',
+      LOCAL_AI_MODEL: 'qwen-local',
+      LOCAL_AI_MCP_MODE: 'ephemeral',
+      LOCAL_AI_MCP_INTEGRATIONS: integrations,
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('server_label') && e.includes('required'))).toBe(true);
+  });
+
+  it('rejects Ephemeral MCP integration with invalid server_url', () => {
+    const integrations = JSON.stringify([{ server_label: 'hf', server_url: 'not-a-url', allowed_tools: ['hub_repo_search'] }]);
+    const result = validateConfig({
+      ...BASE_ENV,
+      LOCAL_AI_ENABLED: 'true',
+      LOCAL_AI_MODEL: 'qwen-local',
+      LOCAL_AI_MCP_MODE: 'ephemeral',
+      LOCAL_AI_MCP_INTEGRATIONS: integrations,
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('server_url') && e.includes('http'))).toBe(true);
+  });
+
+  it('rejects Ephemeral MCP integration with empty allowed_tools', () => {
+    const integrations = JSON.stringify([{ server_label: 'hf', server_url: 'https://huggingface.co/mcp', allowed_tools: [] }]);
+    const result = validateConfig({
+      ...BASE_ENV,
+      LOCAL_AI_ENABLED: 'true',
+      LOCAL_AI_MODEL: 'qwen-local',
+      LOCAL_AI_MCP_MODE: 'ephemeral',
+      LOCAL_AI_MCP_INTEGRATIONS: integrations,
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('allowed_tools') && e.includes('empty'))).toBe(true);
+  });
+
   it('does not require OPENAI_API_KEY when Local AI is enabled by default', () => {
     const result = validateConfig({ ...BASE_ENV, LOCAL_AI_ENABLED: 'true', LOCAL_AI_MODEL: 'qwen-local' });
     expect(result.valid).toBe(true);

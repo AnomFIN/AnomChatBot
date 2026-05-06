@@ -48,12 +48,44 @@ export function redactSecret(value) {
   return value.slice(0, 4) + '...' + value.slice(-3);
 }
 
-function isJsonArray(value) {
+function isValidHttpUrlString(value) {
   try {
-    return Array.isArray(JSON.parse(value));
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
   } catch {
     return false;
   }
+}
+
+function validateMcpIntegrationsEnv(value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return ['LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral'];
+  }
+  if (!Array.isArray(parsed)) {
+    return ['LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral'];
+  }
+  if (parsed.length === 0) {
+    return ['LOCAL_AI_MCP_INTEGRATIONS must not be empty when LOCAL_AI_MCP_MODE=ephemeral'];
+  }
+  const errs = [];
+  for (let i = 0; i < parsed.length; i++) {
+    const item = parsed[i];
+    const prefix = `LOCAL_AI_MCP_INTEGRATIONS[${i}]`;
+    const serverLabel = String(item?.server_label ?? '').trim();
+    const serverUrl = String(item?.server_url ?? '').trim();
+    const allowedToolsRaw = item?.allowed_tools ?? [];
+    const allowedTools = Array.isArray(allowedToolsRaw)
+      ? allowedToolsRaw.map(t => String(t).trim()).filter(Boolean)
+      : String(allowedToolsRaw).split(',').map(t => t.trim()).filter(Boolean);
+    if (!serverLabel) errs.push(`${prefix}: server_label is required`);
+    if (!serverUrl) errs.push(`${prefix}: server_url is required`);
+    else if (!isValidHttpUrlString(serverUrl)) errs.push(`${prefix}: server_url must be a valid http(s) URL`);
+    if (allowedTools.length === 0) errs.push(`${prefix}: allowed_tools must not be empty`);
+  }
+  return errs;
 }
 
 function getVersion() {
@@ -135,8 +167,8 @@ export function validateConfig(env) {
   if (localAiEnabled && localAiMcpMode === 'local_config' && !localAiMcpConfigPath) {
     errors.push('LOCAL_AI_MCP_CONFIG_PATH must not be empty when LOCAL_AI_MCP_MODE=local_config');
   }
-  if (localAiEnabled && localAiMcpMode === 'ephemeral' && !isJsonArray(localAiMcpIntegrations)) {
-    errors.push('LOCAL_AI_MCP_INTEGRATIONS must be a JSON array when LOCAL_AI_MCP_MODE=ephemeral');
+  if (localAiEnabled && localAiMcpMode === 'ephemeral') {
+    errors.push(...validateMcpIntegrationsEnv(localAiMcpIntegrations));
   }
 
   if (!localAiEnabled && VALID_AI_PROVIDERS.includes(aiProvider) && aiProvider === 'openai' && !openaiApiKey) {
