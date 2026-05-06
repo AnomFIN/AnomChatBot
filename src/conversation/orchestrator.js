@@ -129,6 +129,10 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
     const localAiEnabled = isTruthy(settings.local_ai_enabled);
     if (localAiEnabled) {
+      const mcpMode = settings.local_ai_mcp_mode || (isTruthy(settings.local_ai_mcp_enabled) ? 'local_config' : 'disabled');
+      const normalizedIntegrations = mcpMode === 'ephemeral'
+        ? normalizeEphemeralMcpIntegrations(settings.local_ai_mcp_integrations || '[]')
+        : [];
       const localAi = {
         enabled: true,
         provider: settings.local_ai_provider || 'lmstudio',
@@ -137,14 +141,12 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
         usePermissionToken: isTruthy(settings.local_ai_use_permission_token),
         permissionToken: settings.local_ai_permission_token || config.ai.localAi?.permissionToken || '',
         mcpEnabled: isTruthy(settings.local_ai_mcp_enabled),
-        mcpMode: settings.local_ai_mcp_mode || (isTruthy(settings.local_ai_mcp_enabled) ? 'local_config' : 'disabled'),
+        mcpMode,
         mcpConfigPath: settings.local_ai_mcp_config_path || '.mcp.json',
-        mcpIntegrations: settings.local_ai_mcp_integrations || '[]',
+        mcpIntegrations: normalizedIntegrations,
       };
-      const integrationsKey = localAi.mcpMode === 'ephemeral'
-        ? JSON.stringify(normalizeEphemeralMcpIntegrations(localAi.mcpIntegrations))
-        : '';
-      const cacheKey = `global|local|${localAi.provider}|${localAi.baseUrl}|${localAi.model}|token:${localAi.usePermissionToken}|mcp:${localAi.mcpMode}:${localAi.mcpConfigPath}:${integrationsKey}`;
+      const integrationsKey = mcpMode === 'ephemeral' ? JSON.stringify(normalizedIntegrations) : '';
+      const cacheKey = `global|local|${localAi.provider}|${localAi.baseUrl}|${localAi.model}|token:${localAi.usePermissionToken}|mcp:${mcpMode}:${localAi.mcpConfigPath}:${integrationsKey}`;
       if (conversationProviders.has(cacheKey)) return conversationProviders.get(cacheKey);
 
       try {

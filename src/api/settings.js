@@ -134,7 +134,12 @@ export default async function settingsRoutes(fastify, opts) {
       updates.local_ai_mcp_mode = enabled ? 'local_config' : 'disabled';
     }
     if (updates.local_ai_mcp_integrations !== undefined) {
-      updates.local_ai_mcp_integrations = JSON.stringify(normalizeEphemeralMcpIntegrations(updates.local_ai_mcp_integrations));
+      const mode = updates.local_ai_mcp_mode;
+      if (mode === undefined || mode === 'ephemeral') {
+        updates.local_ai_mcp_integrations = JSON.stringify(normalizeEphemeralMcpIntegrations(updates.local_ai_mcp_integrations));
+      } else if (typeof updates.local_ai_mcp_integrations !== 'string') {
+        updates.local_ai_mcp_integrations = JSON.stringify(updates.local_ai_mcp_integrations);
+      }
     }
 
     setSettingsBulk(updates);
