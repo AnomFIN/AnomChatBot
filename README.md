@@ -69,7 +69,7 @@ See [.env.example](.env.example) for all options.
 
 ### WhatsApp Modes
 
-**Baileys (default)** — Connects via WhatsApp Web protocol. Scan a QR code on first launch (displayed in terminal and GUI). Session persists across restarts. Unofficial — WhatsApp may change the protocol.
+**Baileys (default)** — Connects via WhatsApp Web protocol. Scan a QR code on first launch (displayed in terminal and GUI). Session persists across restarts. If a login attempt gets stale, open **QR / WhatsApp** and click **Generoi QR uudelleen / Regenerate QR** to clear QR/login artifacts and request a fresh backend session. Unofficial — WhatsApp may change the protocol.
 
 **Cloud API** — Official Meta API. Requires a Meta Business Account, webhook URL (use ngrok for development), and Cloud API credentials. Stable and supported.
 
@@ -80,10 +80,30 @@ The web interface runs at `http://127.0.0.1:3001` and provides:
 - **Dashboard** — Transport status, AI status, system health
 - **Conversations** — List, search, view messages, send replies
 - **Settings** — Per-conversation tone, flirt, temperature, system prompt, auto-reply toggle
-- **QR Code** — Baileys QR display for WhatsApp login
-- **Logs** — Real-time server log stream
+- **QR Code** — Baileys QR display with stale-state cleanup and manual regeneration
+- **Logs** — Real-time server log stream with Socket.IO updates and polling fallback
 
 No Telegram bot is required to use the GUI.
+
+## QR login and live logs verification
+
+1. Start the app with `start.bat` on Windows or `npm start` on Linux/macOS.
+2. Open `http://127.0.0.1:3001` and go to **QR / WhatsApp**.
+3. Click **Generoi QR uudelleen / Regenerate QR**. The UI should show a generating state, clear stale browser QR/login keys, call the backend reset endpoint, and then display the next Baileys QR event.
+4. Go to **Logs**. Recent backend log entries should load immediately from `/api/logs`, then update live through Socket.IO while polling every five seconds as a fallback.
+
+### Why this design
+
+- QR regeneration has one backend authority: the Baileys transport closes the current socket, removes only its configured auth directory, and reconnects for a fresh QR.
+- Browser cleanup targets QR/login/auth/session-style keys only, preserving unrelated user settings such as sidebar preferences.
+- Live logs use an in-memory, redacted ring buffer plus Socket.IO emission, so the UI can recover after refresh without requiring a separate log database.
+- `start.bat` keeps the original single-process startup behavior while adding readable sections and clear failure instructions.
+
+### Troubleshooting
+
+- If QR regeneration fails, check **Logs** or `GET /api/logs` for the backend error and confirm `WHATSAPP_MODE=baileys`.
+- If the Logs page is empty, call `GET /api/health` or trigger QR regeneration to produce backend log events.
+- If `start.bat` exits immediately, run `install.bat`, validate `.env`, and check the final error section printed by the launcher.
 
 ## Telegram Admin (Optional)
 
@@ -104,6 +124,8 @@ All return `{ success, data?, error? }`.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | System health + transport status |
+| GET | `/api/logs` | Recent backend logs for the live logs page |
+| POST | `/api/transport/qr/regenerate` | Clear Baileys login artifacts and request a fresh QR |
 | GET | `/api/conversations` | List conversations |
 | GET | `/api/conversations/:id/messages` | Message history |
 | POST | `/api/conversations/:id/messages` | Send a message |

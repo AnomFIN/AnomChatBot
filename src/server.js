@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import formbody from '@fastify/formbody';
 import fastifyStatic from '@fastify/static';
+import { capturePinoLog } from './realtime/logBus.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = join(__dirname, '../web/dist');
@@ -26,6 +27,12 @@ export function createServer(config) {
           colorize: true,
           translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
           ignore: 'pid,hostname',
+        },
+      },
+      hooks: {
+        logMethod(inputArgs, method, level) {
+          capturePinoLog(inputArgs, level);
+          return method.apply(this, inputArgs);
         },
       },
     },

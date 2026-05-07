@@ -105,6 +105,18 @@ export function createTransportManager(config, orchestrator, io, logger) {
   }
 
   /**
+   * Reset temporary QR/login state and start a fresh Baileys login attempt.
+   */
+  async function regenerateLogin() {
+    if (!transport?.regenerateLogin) {
+      return { success: false, error: 'Current transport does not support QR regeneration' };
+    }
+
+    log('warn', 'Regenerating WhatsApp QR login — clearing stale auth state');
+    return transport.regenerateLogin();
+  }
+
+  /**
    * Shutdown the transport gracefully.
    */
   async function shutdown() {
@@ -138,6 +150,7 @@ export function createTransportManager(config, orchestrator, io, logger) {
 
   return {
     initialize,
+    regenerateLogin,
     shutdown,
     getStatus,
     getTransport,

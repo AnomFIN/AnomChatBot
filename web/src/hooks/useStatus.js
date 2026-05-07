@@ -35,6 +35,7 @@ export function useStatus() {
 
 export function useQRCode() {
   const [qrDataUrl, setQrDataUrl] = useState(null);
+  const clearQrDataUrl = useCallback(() => setQrDataUrl(null), []);
 
   useSocket('transport:qr', useCallback(({ qrDataUrl: url }) => {
     setQrDataUrl(url);
@@ -47,5 +48,5 @@ export function useQRCode() {
     }
   }, []));
 
-  return { qrDataUrl };
+  return { qrDataUrl, clearQrDataUrl };
 }
