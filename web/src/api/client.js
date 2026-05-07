@@ -129,3 +129,13 @@ export function editOutgoingMessage(id, content) {
 export function deleteOutgoingMessage(id) {
   return request(`/outgoing/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(d => d.data);
 }
+
+// ── WhatsApp QR login ─────────────────────────────────────────────────
+export function regenerateQrLogin() {
+  return request('/transport/qr/regenerate', { method: 'POST' }).then(d => d.data);
+}
+
+// ── Live logs ──────────────────────────────────────────────────────────
+export function getLogs(limit = 200) {
+  return request(`/logs?limit=${encodeURIComponent(limit)}`).then(d => d.data);
+}

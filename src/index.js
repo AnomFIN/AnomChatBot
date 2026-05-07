@@ -12,6 +12,8 @@ import settingsRoutes from './api/settings.js';
 import webhookRoutes from './api/webhook.js';
 import presetRoutes from './api/presets.js';
 import outgoingRoutes from './api/outgoing.js';
+import logsRoutes from './api/logs.js';
+import transportRoutes from './api/transport.js';
 
 async function main() {
   // ── 1. Load and validate config ──────────────────────────────────────────
@@ -95,6 +97,8 @@ async function main() {
   fastify.register(settingsRoutes, { io });
   fastify.register(presetRoutes);
   fastify.register(outgoingRoutes, { orchestrator });
+  fastify.register(logsRoutes);
+  fastify.register(transportRoutes, { transportManager, config });
 
   // Register webhook routes only for Cloud API mode
   if (config.whatsapp.mode === 'cloud_api') {

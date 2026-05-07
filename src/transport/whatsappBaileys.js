@@ -1,3 +1,4 @@
+import { mkdir, rm } from 'node:fs/promises';
 import { TransportAdapter, TRANSPORT_STATES } from './base.js';
 import QRCode from 'qrcode';
 
@@ -78,6 +79,7 @@ export class WhatsAppBaileysTransport extends TransportAdapter {
    * Create the Baileys socket and wire up all event handlers.
    */
   async _connect() {
+    this._intentionalDisconnect = false;
     this._setStatus(TRANSPORT_STATES.CONNECTING, 'Loading auth state…');
 
     try {
@@ -293,6 +295,70 @@ export class WhatsAppBaileysTransport extends TransportAdapter {
   }
 
   /**
+   * Clear any persisted QR/auth state before a fresh login attempt.
+   */
+  async _clearAuthState() {
+    await rm(this._config.authDir, { recursive: true, force: true });
+    await mkdir(this._config.authDir, { recursive: true, mode: 0o700 });
+    this._log('info', 'Cleared Baileys QR/auth session artifacts');
+  }
+
+  async _closeSocket({ logout = false } = {}) {
+    if (!this._socket) return;
+
+    if (logout) {
+      try {
+        await this._socket.logout();
+      } catch {
+        // logout may fail if already disconnected — auth files are still removed for regeneration
+      }
+    }
+
+    try {
+      this._socket.ev?.removeAllListeners?.('connection.update');
+      this._socket.ev?.removeAllListeners?.('creds.update');
+      this._socket.ev?.removeAllListeners?.('messages.upsert');
+    } catch {
+      // listener cleanup is best-effort during QR regeneration/shutdown
+    }
+
+    try {
+      this._socket.end(undefined);
+    } catch {
+      // end may also fail — ignore
+    }
+
+    this._socket = null;
+  }
+
+  /**
+   * Invalidate the current QR/session attempt and force Baileys to emit a fresh QR.
+   */
+  async regenerateLogin() {
+    this._intentionalDisconnect = true;
+    this._reconnectAttempt = 0;
+
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
+    this._setStatus(TRANSPORT_STATES.CONNECTING, 'Resetting QR login state…');
+
+    try {
+      await this._closeSocket({ logout: true });
+      await this._clearAuthState();
+      await this._loadBaileys();
+      await this._connect();
+      return { success: true, data: { status: this.getStatus() } };
+    } catch (err) {
+      this._setStatus(TRANSPORT_STATES.ERROR, `QR regeneration failed: ${err.message}`);
+      this._log('error', `QR regeneration failed: ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
    * Schedule a reconnection attempt with exponential backoff.
    */
   _scheduleReconnect() {
@@ -398,19 +464,7 @@ export class WhatsAppBaileysTransport extends TransportAdapter {
       this._reconnectTimer = null;
     }
 
-    if (this._socket) {
-      try {
-        await this._socket.logout();
-      } catch {
-        // logout may fail if already disconnected — that's fine
-      }
-      try {
-        this._socket.end(undefined);
-      } catch {
-        // end may also fail — ignore
-      }
-      this._socket = null;
-    }
+    await this._closeSocket({ logout: true });
 
     this._setStatus(TRANSPORT_STATES.DISCONNECTED, 'Shut down');
     this._log('info', 'Baileys transport shut down');
