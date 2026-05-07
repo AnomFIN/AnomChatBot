@@ -105,3 +105,27 @@ export function updateGlobalSettings(settings) {
     body: JSON.stringify(settings),
   }).then(d => d.data);
 }
+
+// ── Outgoing AI review queue ───────────────────────────────────────────
+export function getOutgoingMessages() {
+  return request('/outgoing').then(d => d.data);
+}
+
+export function pauseOutgoingMessage(id) {
+  return request(`/outgoing/${encodeURIComponent(id)}/pause`, { method: 'POST' }).then(d => d.data);
+}
+
+export function resumeOutgoingMessage(id) {
+  return request(`/outgoing/${encodeURIComponent(id)}/resume`, { method: 'POST' }).then(d => d.data);
+}
+
+export function editOutgoingMessage(id, content) {
+  return request(`/outgoing/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ content }),
+  }).then(d => d.data);
+}
+
+export function deleteOutgoingMessage(id) {
+  return request(`/outgoing/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(d => d.data);
+}

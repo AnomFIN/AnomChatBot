@@ -34,6 +34,18 @@ export function addMessage(conversationId, role, content, opts = {}) {
   return db.prepare('SELECT * FROM messages WHERE id = ?').get(info.lastInsertRowid);
 }
 
+
+/**
+ * Update message text content. Used by operator review before outbound send.
+ */
+export function updateMessageContent(messageId, content) {
+  const db = getDatabase();
+  db.prepare(
+    'UPDATE messages SET content = ? WHERE id = ?'
+  ).run(content, messageId);
+  return db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId) ?? null;
+}
+
 /**
  * Update delivery status for a message.
  */

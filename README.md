@@ -342,3 +342,42 @@ npm start
 - Implement the real MCP tool-call loop with tool result persistence and timeout controls.
 - Add GUI authentication before exposing the admin panel outside localhost.
 - Move large branding assets from settings rows to content-addressed local files if teams need bigger images.
+
+## Outgoing AI Review Queue
+
+When an AI reply is generated (global OpenAI-compatible provider or Local AI), it now enters a short operator-review queue before transport send. The queue is shown on the left side of the Conversations screen under **Messages outgoing:**.
+
+Operator controls:
+
+- **Live countdown** — shows seconds until the AI message is released to WhatsApp.
+- **Pause / Resume** — freezes or restarts the timer for one outgoing message.
+- **Edit** — automatically pauses that message, saves the revised text, and keeps it paused until resumed.
+- **Delete** — cancels the outgoing send and marks the persisted assistant message as failed with an operator-delete reason.
+
+### Why this design
+
+- The review queue is in-memory and owned by the conversation orchestrator, so unsent AI text has one authoritative timer and no duplicated state.
+- Socket.IO pushes queue changes live while `/api/outgoing` lets the GUI recover the current queue after reconnect.
+- Edits update the persisted assistant message before send, keeping the conversation transcript aligned with what actually leaves the system.
+- The countdown uses the configured presence/read/typing duration, then the transport send runs immediately after approval to avoid double-waiting.
+
+### Runbook
+
+```bash
+npm install
+cd web && npm install && npm run build && cd ..
+npm test
+npm start
+```
+
+Troubleshooting:
+
+- If no message appears in **Messages outgoing:**, confirm auto-reply is enabled and the AI provider generated a reply without error.
+- If a message disappears instantly, check the presence settings; disabled presence produces a near-zero review delay.
+- If build fails with parse errors around `<<<<<<<`, run `git grep -n -E '^(<<<<<<<|=======|>>>>>>>)'` and remove unresolved merge conflict markers.
+
+### Next iterations
+
+- Add durable recovery for queued-but-unsent messages across server restarts.
+- Add role-based GUI authentication before exposing the review controls beyond localhost.
+- Add an optional global “require manual approve” mode that never auto-sends without operator release.

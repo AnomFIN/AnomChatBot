@@ -12,6 +12,7 @@ import QRCodeDisplay from './components/QRCodeDisplay.jsx';
 import LogsView from './components/LogsView.jsx';
 import PresetsManager from './components/PresetsManager.jsx';
 import NewConversation from './components/NewConversation.jsx';
+import OutgoingMessagesPanel from './components/OutgoingMessagesPanel.jsx';
 import { getGlobalSettings } from './api/client.js';
 
 function Dashboard() {
@@ -106,6 +107,7 @@ function Dashboard() {
       <div className="app-body">
         {activeTab === 'chat' && (
           <div className={`chat-layout ${!showSidebar ? 'sidebar-hidden' : ''}`}>
+            <OutgoingMessagesPanel onSelectConversation={(id) => { setSelectedId(id); setShowSettings(false); }} />
             {showSidebar && (
               <ConversationList
                 conversations={conversations}

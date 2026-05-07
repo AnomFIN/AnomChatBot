@@ -47,8 +47,10 @@ export function createPresenceManager({ getTransport, logger }) {
    * @param {string} remoteId — phone number or JID
    * @param {string} replyContent — the message about to be sent (for typing duration calc)
    * @param {object[]} [messageKeys] — Baileys message keys for read receipts
+   * @param {object} [options]
+   * @param {boolean} [options.skipTiming] — true after GUI review countdown already elapsed
    */
-  async function simulateBeforeSend(remoteId, replyContent, messageKeys = []) {
+  async function simulateBeforeSend(remoteId, replyContent, messageKeys = [], options = {}) {
     const settings = getPresenceSettings();
     if (!settings.enabled) return;
 
@@ -75,7 +77,7 @@ export function createPresenceManager({ getTransport, logger }) {
       log('debug', `Online for ${remoteId}`);
 
       // 2. Wait → mark as read
-      if (settings.readDelay > 0) {
+      if (!options.skipTiming && settings.readDelay > 0) {
         await sleep(settings.readDelay);
       }
 
@@ -90,7 +92,9 @@ export function createPresenceManager({ getTransport, logger }) {
 
       // 4. Typing duration based on message length
       const typingDuration = calculateTypingDuration(replyContent, settings);
-      await sleep(typingDuration);
+      if (!options.skipTiming) {
+        await sleep(typingDuration);
+      }
 
       // 5. Stop typing indicator (message will be sent by caller immediately after)
       await transport.sendPresenceUpdate('paused', jid);
@@ -155,6 +159,15 @@ export function createPresenceManager({ getTransport, logger }) {
   }
 
   /**
+   * Estimate the full wait before an outbound message is actually sent.
+   */
+  function estimateBeforeSendDelay(replyContent) {
+    const settings = getPresenceSettings();
+    if (!settings.enabled) return 0;
+    return Math.max(0, settings.readDelay) + calculateTypingDuration(String(replyContent || ''), settings);
+  }
+
+  /**
    * Get current presence settings (for GUI display).
    */
   function getSettings() {
@@ -175,6 +188,7 @@ export function createPresenceManager({ getTransport, logger }) {
   return {
     simulateBeforeSend,
     scheduleIdle,
+    estimateBeforeSendDelay,
     getSettings,
     shutdown,
   };

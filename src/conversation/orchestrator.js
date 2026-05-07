@@ -12,12 +12,14 @@ import {
   updateDeliveryStatus,
   updatePlatformMessageId,
   updateMessageMedia,
+  updateMessageContent,
   addMediaMetadata,
 } from '../persistence/messages.js';
 import { getSettingsBulk } from '../persistence/settings.js';
 import { buildMessages } from './promptBuilder.js';
 import { createDelayManager } from './delayManager.js';
 import { createPresenceManager } from './presenceManager.js';
+import { createOutgoingQueue } from './outgoingQueue.js';
 import { createApproachManager } from './approachManager.js';
 import { createAIProvider, normalizeEphemeralMcpIntegrations } from '../ai/provider.js';
 import { downloadAndStore } from '../media/storage.js';
@@ -56,6 +58,14 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     logger,
     onReady: async (conversationId, version) => {
       await _processDelayedReply(conversationId, version);
+    },
+  });
+
+  // ── Outgoing review queue ─────────────────────────────────────────────
+  const outgoingQueue = createOutgoingQueue({
+    logger,
+    onChange: (action, entry) => {
+      emit('outgoing:update', { action, message: entry });
     },
   });
 
@@ -310,8 +320,8 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
     emit('message:new', { conversationId, message: approachMessage });
 
-    // Send via transport with presence simulation
-    await _sendWithPresence(conversation, approachMessage, aiReply.content);
+    // Send via transport with operator review + presence simulation
+    await _sendWithPresence(conversation, approachMessage, aiReply.content, { source: 'approach' });
 
     touchConversation(conversationId);
     log('info', `Sent approach message ${approachInfo.messageNumber}/${approachInfo.maxMessages} for ${conversationId}`);
@@ -392,8 +402,8 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
 
     emit('message:new', { conversationId, message: aiMessage });
 
-    // Send via transport with presence simulation
-    await _sendWithPresence(conversation, aiMessage, aiReply.content);
+    // Send via transport with operator review + presence simulation
+    await _sendWithPresence(conversation, aiMessage, aiReply.content, { source: 'ai' });
 
     touchConversation(conversationId);
     delayManager.complete(conversationId);
@@ -402,7 +412,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
   /**
    * Send a message via transport with presence simulation and delivery tracking.
    */
-  async function _sendWithPresence(conversation, messageRow, content) {
+  async function _sendWithPresence(conversation, messageRow, content, options = {}) {
     const transport = getTransport?.();
     if (!transport || !conversation.remote_id) {
       log('warn', `No transport or remote_id for conversation ${conversation.id}`);
@@ -412,21 +422,45 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
       return;
     }
 
-    // Update status to sending
+    const reviewDelayMs = presenceManager.estimateBeforeSendDelay(content);
+    emit('bot:activity', { conversationId: conversation.id, state: 'queued' });
+
+    const reviewedContent = await outgoingQueue.enqueue({
+      conversationId: conversation.id,
+      messageId: messageRow.id,
+      content,
+      delayMs: reviewDelayMs,
+      source: options.source,
+    });
+
+    if (!reviewedContent) {
+      updateDeliveryStatus(messageRow.id, 'failed', 'Deleted by operator before send');
+      _emitMessageStatus(conversation.id, messageRow.id, 'failed', 'Deleted by operator before send');
+      emit('bot:activity', { conversationId: conversation.id, state: 'idle' });
+      return;
+    }
+
+    let finalContent = reviewedContent;
+    if (finalContent !== content) {
+      const updated = updateMessageContent(messageRow.id, finalContent);
+      if (updated) emit('message:update', { conversationId: conversation.id, message: updated });
+    }
+
+    // Update status to sending after the operator review countdown reaches zero.
     updateDeliveryStatus(messageRow.id, 'sending');
     _emitMessageStatus(conversation.id, messageRow.id, 'sending');
     emit('bot:activity', { conversationId: conversation.id, state: 'typing' });
 
-    // Presence simulation: online → read → typing → (done, caller sends)
+    // Presence simulation: online → read → typing → (done, caller sends). Timing was already shown in the review queue.
     const msgKeys = pendingMessageKeys.get(conversation.id) ?? [];
-    await presenceManager.simulateBeforeSend(conversation.remote_id, content, msgKeys);
+    await presenceManager.simulateBeforeSend(conversation.remote_id, finalContent, msgKeys, { skipTiming: true });
     pendingMessageKeys.delete(conversation.id);
 
     emit('bot:activity', { conversationId: conversation.id, state: 'sending' });
 
     // Actually send
     try {
-      const sendResult = await transport.sendMessage(conversation.remote_id, content);
+      const sendResult = await transport.sendMessage(conversation.remote_id, finalContent);
 
       if (sendResult.success) {
         updateDeliveryStatus(messageRow.id, 'sent');
@@ -682,6 +716,29 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     };
   }
 
+  function getOutgoingMessages() {
+    return outgoingQueue.list();
+  }
+
+  function pauseOutgoingMessage(id) {
+    return outgoingQueue.pause(id);
+  }
+
+  function resumeOutgoingMessage(id) {
+    return outgoingQueue.resume(id);
+  }
+
+  function editOutgoingMessage(id, content) {
+    const updated = outgoingQueue.edit(id, content);
+    const message = updateMessageContent(updated.messageId, updated.content);
+    if (message) emit('message:update', { conversationId: updated.conversationId, message });
+    return updated;
+  }
+
+  function deleteOutgoingMessage(id) {
+    return outgoingQueue.delete(id);
+  }
+
   /**
    * Get delay manager status (for status bar).
    */
@@ -689,6 +746,7 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     return {
       pendingReplies: delayManager.getPendingCount(),
       activeApproaches: approachManager.getActiveCount(),
+      outgoingMessages: outgoingQueue.list().length,
     };
   }
 
@@ -699,12 +757,18 @@ export function createOrchestrator(config, aiProvider, io, { getTransport, logge
     delayManager.shutdown();
     presenceManager.shutdown();
     approachManager.shutdown();
+    outgoingQueue.shutdown();
   }
 
   return {
     handleIncomingMessage,
     handleOperatorMessage,
     getStatus,
+    getOutgoingMessages,
+    pauseOutgoingMessage,
+    resumeOutgoingMessage,
+    editOutgoingMessage,
+    deleteOutgoingMessage,
     shutdown,
     // Expose for testing
     _delayManager: delayManager,
