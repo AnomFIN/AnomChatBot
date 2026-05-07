@@ -403,3 +403,41 @@ Troubleshooting:
 - Add durable recovery for queued-but-unsent messages across server restarts.
 - Add role-based GUI authentication before exposing the review controls beyond localhost.
 - Add an optional global “require manual approve” mode that never auto-sends without operator release.
+
+## Dependency security audit
+
+The backend intentionally avoids `node-telegram-bot-api` because its polling stack pulls in deprecated `request`-era packages. Telegram admin polling now uses Node's native `fetch`, abortable long polling, strict token validation, and sanitized text output.
+
+Runtime overrides are pinned only for vulnerable transitive packages required by Baileys:
+
+- `axios@1.16.0` patches the Baileys HTTP client advisory range without changing the direct Baileys major version.
+- `protobufjs@7.5.5` patches the vulnerable libsignal/Baileys protobuf path while preserving Baileys v6 usage.
+
+### Why this design
+
+- No forced semver-major dependency upgrades were needed for the production app path.
+- Removing one direct dependency eliminates the vulnerable Telegram `request` chain instead of masking it with fragile transitive pins.
+- Overrides are narrow and documented so future upgrades can delete them intentionally.
+- App startup validation uses Cloud API mode in local checks to avoid opening a live WhatsApp Web login during CI-style verification.
+
+### Runbook
+
+```bash
+npm install
+npm audit
+npm test
+cd web && npm install && npm run build && cd ..
+PORT=3099 HOST=127.0.0.1 WHATSAPP_MODE=cloud_api TELEGRAM_ENABLED=false LOG_LEVEL=warn npm start
+```
+
+Troubleshooting:
+
+- If `npm audit` flags `axios` or `protobufjs` again, check whether Baileys has released a safe stable version and remove the matching override only after `npm audit` stays clean.
+- If Telegram admin commands do not respond, confirm `TELEGRAM_ENABLED=true`, `TELEGRAM_BOT_TOKEN` matches the Bot API token format, and `TELEGRAM_ADMIN_IDS` contains the numeric chat id.
+- If startup health reports WhatsApp Cloud API as `error` during local validation, that is expected unless real Cloud API credentials are present.
+
+### Next iterations
+
+- Replace the Baileys protobuf override with a stable Baileys release once upstream ships a patched libsignal dependency.
+- Add a `/api/telegram/status` diagnostic endpoint for admin-bot polling health.
+- Add scheduled CI audit checks for both backend and React package directories.
