@@ -185,7 +185,7 @@ function createLocalAIProvider(localAi, logger = null) {
       const payload = await response.json();
       connected = true;
       lastError = null;
-      return usesLmStudioApi ? normalizeLmStudioApiChatResponse(payload) : normalizeCompletion(payload);
+      return normalizeCompletion(payload);
     } catch (err) {
       if (isAbortError(err)) throw err;
       connected = false;
